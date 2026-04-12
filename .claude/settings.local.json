@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cp -r guided-scheduler/public .)",
+      "Bash(cp -r guided-scheduler/src .)",
+      "Bash(pnpm install:*)"
+    ]
+  }
+}
