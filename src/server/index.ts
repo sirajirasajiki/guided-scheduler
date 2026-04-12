@@ -1,6 +1,5 @@
 import { Hono } from "hono";
-import { createDb } from "./db/client";
-import { events } from "./db/schema";
+import eventsRoute from "./routes/events";
 
 type Bindings = {
   DB: D1Database;
@@ -8,13 +7,6 @@ type Bindings = {
 
 const app = new Hono<{ Bindings: Bindings }>();
 
-app.get("/api/hello", async (c) => {
-  const db = createDb(c.env.DB);
-  const allEvents = await db.select().from(events).all();
-  return c.json({
-    message: "Hello from Hono on Workers!",
-    eventCount: allEvents.length,
-  });
-});
+app.route("/api/events", eventsRoute);
 
 export default app;
