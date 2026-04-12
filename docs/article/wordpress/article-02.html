@@ -1,0 +1,347 @@
+<p>こんにちは、白々さじきです。</p>
+
+<p>前回の記事で Cloudflare Workers + Hono + React + D1 の環境構築でハマったポイントを紹介しました。今回はその姉妹記事として、<strong>上から順にコピペすれば同じ構成が再現できる手順書</strong>をまとめます。</p>
+
+<p>「とにかく動く環境を作りたい」という方は、こちらをそのままなぞってもらえばOKです。詰まりやすいポイントの解説は前回の記事に書いているので、エラーが出たらそちらと併読してください。</p>
+
+<h2>完成する構成</h2>
+
+<ul>
+<li>フロントエンド: React + Vite + TypeScript + Tailwind CSS v4</li>
+<li>バックエンド: Hono + TypeScript</li>
+<li>DB: Cloudflare D1 (SQLite)</li>
+<li>ORM: Drizzle ORM</li>
+<li>実行環境: Cloudflare Workers (単一 Worker)</li>
+<li>パッケージマネージャ: pnpm</li>
+</ul>
+
+<p><code>/api/*</code> は Hono が処理し、それ以外は React の SPA を配信する構成です。フロントとバックが同じ Worker 上で動くので、CORS 設定不要・1コマンドでデプロイできます。</p>
+
+<h2>前提</h2>
+
+<ul>
+<li>Node.js 20 以上がインストール済み</li>
+<li>pnpm がインストール済み (<code>npm install -g pnpm</code>)</li>
+<li>Git がインストール済み</li>
+<li>Cloudflare アカウントを持っている</li>
+<li>GitHub アカウントを持っている</li>
+</ul>
+
+<h2>ステップ1: プロジェクト作成</h2>
+
+<pre><code>cd ~/Projects
+pnpm create vite guided-scheduler --template react-ts
+cd guided-scheduler
+pnpm install
+</code></pre>
+
+<h2>ステップ2: Tailwind CSS v4 のセットアップ</h2>
+
+<pre><code>pnpm add -D tailwindcss @tailwindcss/vite
+</code></pre>
+
+<p><code>vite.config.ts</code> を以下に置き換えます。</p>
+
+<pre><code>import { defineConfig } from 'vite'
+import react from '@vitejs/plugin-react'
+import tailwindcss from '@tailwindcss/vite'
+
+export default defineConfig({
+  plugins: [react(), tailwindcss()],
+  build: {
+    outDir: 'dist/client',
+    emptyOutDir: true,
+  },
+})
+</code></pre>
+
+<p><code>src/index.css</code> の中身を全部消して、以下の1行だけにします。</p>
+
+<pre><code>@import "tailwindcss";
+</code></pre>
+
+<p><code>tailwind.config.js</code> や <code>postcss.config.js</code> は <strong>作りません</strong>。v4 では不要です。</p>
+
+<h2>ステップ3: Hono と wrangler のインストール</h2>
+
+<pre><code>pnpm add hono
+pnpm add -D wrangler @cloudflare/workers-types
+pnpm wrangler login
+</code></pre>
+
+<h2>ステップ4: ディレクトリ整理</h2>
+
+<pre><code>mkdir -p src/client src/server src/server/db src/shared
+mv src/main.tsx src/App.tsx src/index.css src/client/
+mv src/assets src/client/
+rm src/App.css
+</code></pre>
+
+<p><code>index.html</code> の <code>&lt;script&gt;</code> タグのパスを修正します。</p>
+
+<pre><code>&lt;script type="module" src="/src/client/main.tsx"&gt;&lt;/script&gt;
+</code></pre>
+
+<p><code>src/client/App.tsx</code> の <code>import "./App.css"</code> の行を削除し、中身をシンプルにします。</p>
+
+<pre><code>function App() {
+  return (
+    &lt;div className="p-8"&gt;
+      &lt;h1 className="text-3xl font-bold text-blue-500"&gt;
+        Tailwind 動作確認
+      &lt;/h1&gt;
+    &lt;/div&gt;
+  )
+}
+
+export default App
+</code></pre>
+
+<h2>ステップ5: Hono エントリポイント作成</h2>
+
+<p><code>src/server/index.ts</code> を新規作成します。</p>
+
+<pre><code>import { Hono } from 'hono'
+
+type Bindings = {
+  DB: D1Database
+}
+
+const app = new Hono&lt;{ Bindings: Bindings }&gt;()
+
+app.get('/api/hello', (c) =&gt; {
+  return c.json({ message: 'Hello from Hono on Workers!' })
+})
+
+export default app
+</code></pre>
+
+<h2>ステップ6: TypeScript 設定の分離</h2>
+
+<p><code>tsconfig.server.json</code> を新規作成します。</p>
+
+<pre><code>{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "types": ["@cloudflare/workers-types"],
+    "lib": ["ES2022"],
+    "noEmit": true
+  },
+  "include": ["src/server/**/*", "src/shared/**/*"]
+}
+</code></pre>
+
+<p>ルートの <code>tsconfig.json</code> の <code>references</code> に追加します。</p>
+
+<pre><code>{
+  "files": [],
+  "references": [
+    { "path": "./tsconfig.app.json" },
+    { "path": "./tsconfig.node.json" },
+    { "path": "./tsconfig.server.json" }
+  ]
+}
+</code></pre>
+
+<p><code>tsconfig.app.json</code> の <code>include</code> から <code>src/server</code> を除外します。</p>
+
+<pre><code>{
+  "include": ["src"],
+  "exclude": ["src/server", "src/shared"]
+}
+</code></pre>
+
+<h2>ステップ7: wrangler.toml の作成</h2>
+
+<pre><code>name = "guided-scheduler"
+main = "src/server/index.ts"
+compatibility_date = "2025-04-01"
+
+[assets]
+directory = "./dist/client"
+not_found_handling = "single-page-application"
+binding = "ASSETS"
+run_worker_first = ["/api/*"]
+</code></pre>
+
+<p>ポイントは <code>run_worker_first = ["/api/*"]</code> です。これがないと <code>/api/*</code> が SPA フォールバックされて Hono に届きません。</p>
+
+<h2>ステップ8: D1 データベース作成</h2>
+
+<pre><code>pnpm wrangler d1 create guided-scheduler
+</code></pre>
+
+<p>実行すると以下のような出力が出るので、<code>[[d1_databases]]</code> のブロックを <code>wrangler.toml</code> の末尾に貼り付けます。</p>
+
+<pre><code>[[d1_databases]]
+binding = "DB"
+database_name = "guided-scheduler"
+database_id = "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+</code></pre>
+
+<h2>ステップ9: Drizzle ORM セットアップ</h2>
+
+<pre><code>pnpm add drizzle-orm
+pnpm add -D drizzle-kit
+</code></pre>
+
+<p><code>src/server/db/schema.ts</code> を新規作成します。</p>
+
+<pre><code>import { sqliteTable, text, integer } from 'drizzle-orm/sqlite-core'
+
+export const events = sqliteTable('events', {
+  id: text('id').primaryKey(),
+  name: text('name').notNull(),
+  adminToken: text('admin_token').notNull().unique(),
+  shareToken: text('share_token').notNull().unique(),
+  candidateDates: text('candidate_dates').notNull(),
+  confirmedDate: text('confirmed_date'),
+  createdAt: integer('created_at').notNull(),
+})
+</code></pre>
+
+<p><code>src/server/db/client.ts</code> を新規作成します。</p>
+
+<pre><code>import { drizzle } from 'drizzle-orm/d1'
+import * as schema from './schema'
+
+export const createDb = (d1: D1Database) =&gt; {
+  return drizzle(d1, { schema })
+}
+</code></pre>
+
+<p><code>drizzle.config.ts</code> を新規作成します。</p>
+
+<pre><code>import { defineConfig } from 'drizzle-kit'
+
+export default defineConfig({
+  schema: './src/server/db/schema.ts',
+  out: './migrations',
+  dialect: 'sqlite',
+})
+</code></pre>
+
+<h2>ステップ10: マイグレーション生成と適用</h2>
+
+<pre><code>pnpm drizzle-kit generate
+pnpm wrangler d1 migrations apply guided-scheduler --local
+pnpm wrangler d1 migrations apply guided-scheduler --remote
+</code></pre>
+
+<h2>ステップ11: package.json のスクリプト整備</h2>
+
+<pre><code>"scripts": {
+  "dev": "wrangler dev",
+  "build": "vite build",
+  "deploy": "vite build &amp;&amp; wrangler deploy",
+  "preview": "vite build &amp;&amp; wrangler dev"
+}
+</code></pre>
+
+<h2>ステップ12: D1 から取得する API への書き換え</h2>
+
+<p><code>src/server/index.ts</code> を D1 からデータを取る形に書き換えます。</p>
+
+<pre><code>import { Hono } from 'hono'
+import { createDb } from './db/client'
+import { events } from './db/schema'
+
+type Bindings = {
+  DB: D1Database
+}
+
+const app = new Hono&lt;{ Bindings: Bindings }&gt;()
+
+app.get('/api/hello', async (c) =&gt; {
+  const db = createDb(c.env.DB)
+  const allEvents = await db.select().from(events).all()
+  return c.json({
+    message: 'Hello from Hono on Workers!',
+    eventCount: allEvents.length,
+  })
+})
+
+export default app
+</code></pre>
+
+<h2>ステップ13: ローカル動作確認</h2>
+
+<pre><code>pnpm dev
+</code></pre>
+
+<p>ブラウザで以下にアクセスします。</p>
+
+<ul>
+<li><code>http://localhost:8787/</code> → Tailwind の青い文字が表示される</li>
+<li><code>http://localhost:8787/api/hello</code> → <code>{"message":"Hello from Hono on Workers!","eventCount":0}</code> が返る</li>
+</ul>
+
+<p>両方OKならローカル環境構築は完了です。</p>
+
+<h2>ステップ14: workers.dev サブドメインの登録</h2>
+
+<p>初回デプロイ前に、Cloudflare ダッシュボードから workers.dev サブドメインを登録しておきます。</p>
+
+<ol>
+<li>https://dash.cloudflare.com にログイン</li>
+<li>左サイドバーの「Compute」→「Workers &amp; Pages」を開く</li>
+<li>右側の「Account Details」セクションの「Subdomain」項目から好きな名前を登録</li>
+</ol>
+
+<p>サブドメインはアカウント全体で1つだけ持てる識別子です。プロジェクト名は入れず、自分のハンドルネームなどにするのがおすすめです。</p>
+
+<h2>ステップ15: 本番デプロイ</h2>
+
+<pre><code>pnpm deploy
+</code></pre>
+
+<p>成功すると <code>https://guided-scheduler.&lt;your-subdomain&gt;.workers.dev</code> が出力されます。</p>
+
+<p>ブラウザで <code>&lt;your-url&gt;/api/hello</code> を開いて、ローカルと同じ JSON が返れば本番デプロイ完了です。</p>
+
+<p>なお、サブドメイン登録直後は SSL 証明書発行に5〜15分ほどかかります。すぐにアクセスできなくても焦らず待ちましょう。</p>
+
+<h2>ステップ16: .gitignore と GitHub 連携</h2>
+
+<p><code>.gitignore</code> を確認します。最低限以下が含まれていればOKです。</p>
+
+<pre><code>node_modules
+dist
+.wrangler
+.dev.vars
+</code></pre>
+
+<p>GitHub で空のリポジトリを作って (private 推奨)、ローカルから push します。</p>
+
+<pre><code>git init
+git add .
+git commit -m "初期セットアップ完了"
+git branch -M main
+git remote add origin git@github.com:&lt;username&gt;/guided-scheduler.git
+git push -u origin main
+</code></pre>
+
+<h2>まとめ</h2>
+
+<p>ここまでで、Cloudflare Workers 上に React フロントエンド・Hono バックエンド・D1 データベース・Drizzle ORM が揃った環境ができました。</p>
+
+<p>この環境の良いところは、<strong>ゼロ円で本番デプロイまで完結する</strong>ことです。Cloudflare の無料枠内で動くので、検証目的の個人開発には最適だと思います。</p>
+
+<p>各ステップで詰まった場合は、姉妹記事「Cloudflare Workers + Hono + React + D1 環境構築でハマった6つのポイント」で原因と対処を解説しているので、併せて読んでみてください。</p>
+
+<h2>参考リンク</h2>
+
+<ul>
+<li>Cloudflare Workers 公式: https://developers.cloudflare.com/workers/</li>
+<li>Cloudflare D1 公式: https://developers.cloudflare.com/d1/</li>
+<li>Workers Assets 公式: https://developers.cloudflare.com/workers/static-assets/</li>
+<li>Hono 公式: https://hono.dev/</li>
+<li>Drizzle ORM 公式: https://orm.drizzle.team/</li>
+<li>Tailwind CSS v4 公式: https://tailwindcss.com/docs/installation/using-vite</li>
+<li>Vite 公式: https://vite.dev/</li>
+</ul>

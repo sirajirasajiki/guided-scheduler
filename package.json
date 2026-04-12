@@ -7,7 +7,10 @@
     "dev": "wrangler dev",
     "build": "vite build",
     "deploy": "vite build && wrangler deploy",
-    "preview": "vite build && wrangler dev"
+    "preview": "vite build && wrangler dev",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "wrangler d1 migrations apply guided-scheduler --local",
+    "db:migrate:prod": "wrangler d1 migrations apply guided-scheduler --remote"
   },
   "dependencies": {
     "drizzle-orm": "^0.45.2",

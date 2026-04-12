@@ -1,0 +1,254 @@
+<p>こんにちは、白々さじきです。</p>
+
+<p>最近、個人開発で Cloudflare Workers + Hono + React + D1 の構成を試してみました。シンプルで強力な構成なのですが、実際に環境構築してみると公式ドキュメントだけでは見えにくい落とし穴がいくつもありました。</p>
+
+<p>この記事では、私が実際に踏んだ詰まりポイントを6つ、原因と解決策つきで紹介します。同じ構成にチャレンジする初学者の方の助けになれば嬉しいです。</p>
+
+<p>なお、同じ構成を最初から再現するためのセットアップ手順書は<a href="https://sirajira-sajiki-tech.com/cloudflare-workers-hono-react-d1-drizzle-orm-%e3%81%ae%e3%82%bb%e3%83%83%e3%83%88%e3%82%a2%e3%83%83%e3%83%97%e6%89%8b%e9%a0%86%e6%9b%b8">別記事</a>としてまとめています。「詰まりポイントよりまず動く環境を作りたい」という方はそちらをどうぞ。</p>
+
+<h2>結論</h2>
+
+<p>Cloudflare Workers + Hono + React + D1 の環境構築では、以下の6つに注意するだけで体感の詰まり時間が大幅に減ります。</p>
+
+<ol>
+<li><code>pnpm create vite</code> はプロジェクトディレクトリの「外」で実行する</li>
+<li>Vite テンプレートの <code>App.css</code> は使わないなら import を必ず消す</li>
+<li>Workers Assets と Hono を併用するときは <code>run_worker_first</code> を設定する</li>
+<li>Workers Assets は Cloudflare Pages とは別物、情報の混同に注意</li>
+<li>初回デプロイ前に workers.dev サブドメインの登録が必要</li>
+<li>Tailwind CSS v4 はもう <code>tailwind.config.js</code> を作らない</li>
+</ol>
+
+<p>それぞれ詳しく見ていきます。</p>
+
+<h2>背景：今回試した構成</h2>
+
+<p>今回構築した環境は次の通りです。</p>
+
+<ul>
+<li>フロントエンド: React + Vite + TypeScript + Tailwind CSS v4</li>
+<li>バックエンド: Hono + TypeScript</li>
+<li>DB: Cloudflare D1 (SQLite)</li>
+<li>ORM: Drizzle ORM</li>
+<li>実行環境: Cloudflare Workers (単一 Worker でフロントとバックを同居)</li>
+<li>パッケージマネージャ: pnpm</li>
+</ul>
+
+<p>ポイントは「単一 Worker でフロントエンドとバックエンドを両方配信する」構成です。<code>/api/*</code> は Hono で処理し、それ以外は Workers Assets で React の SPA を返します。CORS 設定も不要、デプロイも 1 コマンドで済む、軽量で気持ちのいい構成です。</p>
+
+<p>ただ、この構成は比較的新しく、日本語情報も少ないので、初学者にはハマりどころが多いのも事実でした。</p>
+
+<h2>詰まりポイント1: create vite でディレクトリがネストする</h2>
+
+<h3>何が起きたか</h3>
+
+<p>最初に <code>pnpm create vite</code> を実行するとき、すでに <code>guided-scheduler</code> というディレクトリを作ってその中に入った状態でコマンドを叩いてしまいました。</p>
+
+<p>すると Vite はプロジェクト名を聞いてくるので、また <code>guided-scheduler</code> と答えてしまい、結果として <code>guided-scheduler/guided-scheduler/</code> という二重ネストのフォルダ構造ができてしまいました。</p>
+
+<h3>NG例</h3>
+
+<pre><code>mkdir guided-scheduler
+cd guided-scheduler
+pnpm create vite
+# プロジェクト名: guided-scheduler
+# → ./guided-scheduler/guided-scheduler/ ができてしまう
+</code></pre>
+
+<h3>OK例</h3>
+
+<p>リポジトリのルートで <code>create vite</code> を実行する場合、プロジェクト名は <code>.</code> (カレントディレクトリ) を指定するか、そもそも親ディレクトリで実行します。</p>
+
+<pre><code># 方法A: 親ディレクトリで実行
+cd ~/Projects
+pnpm create vite guided-scheduler
+cd guided-scheduler
+
+# 方法B: 既にディレクトリ内にいる場合は . を指定
+cd guided-scheduler
+pnpm create vite .
+</code></pre>
+
+<h3>解決策（ハマってしまった場合）</h3>
+
+<p>私の場合はネストした後で気づいたので、内側の <code>guided-scheduler/</code> の中身を全部親に移動して、空になった内側フォルダを削除しました。<code>.gitignore</code> などの隠しファイルも忘れずに移動するのがポイントです。</p>
+
+<h2>詰まりポイント2: App.css の import を消し忘れて build エラー</h2>
+
+<h3>何が起きたか</h3>
+
+<p>Vite が生成した <code>src/App.tsx</code> には最初から <code>import "./App.css"</code> という行が入っています。私は CLAUDE.md のディレクトリ構成方針に合わせて <code>src/client/</code> 配下にファイルを移動したのですが、移動時に <code>App.css</code> を一緒に移動しなかった結果、build 時に次のエラーが出ました。</p>
+
+<pre><code>[UNRESOLVED_IMPORT] Error: Could not resolve './App.css' in src/client/App.tsx
+</code></pre>
+
+<h3>解決策</h3>
+
+<p>Tailwind CSS を使う前提なので、そもそも <code>App.css</code> は不要です。<code>src/client/App.tsx</code> を開いて、次の1行を削除すれば解決します。</p>
+
+<pre><code>import "./App.css";
+</code></pre>
+
+<p>ついでに <code>App.tsx</code> の中身も Vite のサンプルカウンターから自分用のシンプルな初期画面に置き換えてしまうのが楽です。</p>
+
+<pre><code>function App() {
+  return (
+    &lt;div className="p-8"&gt;
+      &lt;h1 className="text-3xl font-bold text-blue-500"&gt;
+        Tailwind 動作確認
+      &lt;/h1&gt;
+    &lt;/div&gt;
+  )
+}
+
+export default App
+</code></pre>
+
+<h2>詰まりポイント3: /api/hello が Hono に届かず SPA フォールバックされる</h2>
+
+<h3>何が起きたか</h3>
+
+<p>Hono で <code>/api/hello</code> エンドポイントを作って、<code>wrangler dev</code> を起動。ブラウザで <code>/api/hello</code> を開いたら、JSON ではなく React の画面（<code>index.html</code>）が表示されてしまいました。</p>
+
+<p>ターミナルにエラーは出ていません。けれど Hono にリクエストが届いていない。これは初見だと原因の特定が難しいです。</p>
+
+<h3>原因</h3>
+
+<p>Workers Assets の SPA フォールバック設定が原因でした。<code>wrangler.toml</code> でこう書いていました。</p>
+
+<pre><code>[assets]
+directory = "./dist/client"
+not_found_handling = "single-page-application"
+</code></pre>
+
+<p><code>not_found_handling = "single-page-application"</code> は「マッチするファイルが無ければ <code>index.html</code> を返す」という挙動です。問題は <strong>Workers Assets が Hono より先に評価される</strong> こと。<code>/api/hello</code> というパスに対応するファイルが <code>dist/client/</code> に無いので、SPA フォールバックで <code>index.html</code> が返り、Hono の <code>/api/hello</code> ハンドラまで到達していなかったわけです。</p>
+
+<h3>解決策</h3>
+
+<p><code>run_worker_first</code> を追加して、<code>/api/*</code> は Hono を優先するように設定します。</p>
+
+<pre><code>[assets]
+directory = "./dist/client"
+not_found_handling = "single-page-application"
+binding = "ASSETS"
+run_worker_first = ["/api/*"]
+</code></pre>
+
+<p>これで <code>/api/*</code> のパスは必ず Hono に届き、それ以外は静的配信、無ければ <code>index.html</code>、という綺麗な振り分けになります。</p>
+
+<h2>詰まりポイント4: Workers Assets と Cloudflare Pages を混同する</h2>
+
+<h3>何が起きたか</h3>
+
+<p>「Cloudflare で React を配信する方法」を検索すると、検索結果の多くが <strong>Cloudflare Pages</strong> の記事で、Workers Assets の情報がほとんど出てきません。</p>
+
+<p>これは情報が古いのが原因です。Workers Assets は比較的新しい機能で、それ以前は Cloudflare Pages を使うのが主流でした。Pages の記事を真似て設定しようとすると、Workers Assets の最新の書き方とは噛み合わず詰まります。</p>
+
+<h3>解決策</h3>
+
+<p>Workers Assets と Pages は別物、と割り切ること。検索するときは「Workers Assets」というキーワードを明示的に入れ、<code>wrangler.toml</code> の <code>[assets]</code> セクションを使う方式が現在の正攻法だと覚えておきましょう。</p>
+
+<p>公式ドキュメントは次の URL から辿れます。</p>
+
+<ul>
+<li>Workers Assets: https://developers.cloudflare.com/workers/static-assets/</li>
+</ul>
+
+<p>古いブログ記事で <code>[site]</code> フィールドを使っているものを見かけたら、それは更に前世代の Workers Sites という機能で、こちらも別物です。これも採用しないでください。</p>
+
+<h2>詰まりポイント5: workers.dev サブドメインの初回登録</h2>
+
+<h3>何が起きたか</h3>
+
+<p><code>pnpm wrangler deploy</code> を実行したら、こんなエラーが出ました。</p>
+
+<pre><code>You need to register a workers.dev subdomain before publishing to workers.dev
+</code></pre>
+
+<h3>原因</h3>
+
+<p>Cloudflare アカウントには <code>xxxxx.workers.dev</code> という形式のサブドメインを <strong>アカウント全体で1つだけ</strong> 持つ仕様があり、それを最初に登録する必要があります。登録していないと Worker をデプロイできません。</p>
+
+<h3>解決策</h3>
+
+<p>Cloudflare ダッシュボードから登録します。</p>
+
+<ol>
+<li>https://dash.cloudflare.com にログイン</li>
+<li>左サイドバーの「Compute」→「Workers &amp; Pages」を開く</li>
+<li>右側の「Account Details」セクションに「Subdomain」という項目がある</li>
+<li>鉛筆アイコンから好きなサブドメイン名を登録</li>
+</ol>
+
+<p>サブドメイン名はアカウント全体で共有されるので、プロジェクト名は入れず、自分の識別子（ハンドルネームなど）にするのがおすすめです。今後作るすべての Worker が <code>&lt;worker-name&gt;.&lt;your-subdomain&gt;.workers.dev</code> という URL になるためです。</p>
+
+<p>なお、登録直後は SSL 証明書の発行に 5〜15 分ほどかかります。すぐにアクセスできなくても焦らず待ちましょう。</p>
+
+<h2>詰まりポイント6: Tailwind CSS v4 の新セットアップ方式</h2>
+
+<h3>何が起きたか</h3>
+
+<p>Tailwind CSS のセットアップ方法を検索すると、ほぼすべての記事で <code>tailwind.config.js</code> を作って <code>npx tailwindcss init</code> を実行するように書かれています。これは Tailwind CSS v3 までの方式です。</p>
+
+<p>v4 では大きく変わっていて、古い手順をそのまま実行すると <strong>設定ファイルがあるのに動かない</strong> というよくわからない状態になります。</p>
+
+<h3>Tailwind CSS v4 の正しい手順 (Vite の場合)</h3>
+
+<p>v4 では PostCSS や Autoprefixer も不要で、専用の Vite プラグインを使います。</p>
+
+<pre><code>pnpm add -D tailwindcss @tailwindcss/vite
+</code></pre>
+
+<p><code>vite.config.ts</code> にプラグインを追加します。</p>
+
+<pre><code>import { defineConfig } from 'vite'
+import react from '@vitejs/plugin-react'
+import tailwindcss from '@tailwindcss/vite'
+
+export default defineConfig({
+  plugins: [
+    react(),
+    tailwindcss(),
+  ],
+})
+</code></pre>
+
+<p>そして CSS ファイル (<code>src/index.css</code> 等) の中身を全部消して、次の1行だけにします。</p>
+
+<pre><code>@import "tailwindcss";
+</code></pre>
+
+<p>これだけ。<code>tailwind.config.js</code> も <code>postcss.config.js</code> も <code>npx tailwindcss init</code> も一切不要です。<code>content</code> パスの指定もいりません (自動検出されます)。</p>
+
+<p>「設定ファイルゼロで動く」のが v4 の売りなので、古い記事の手順は完全に無視して大丈夫です。</p>
+
+<h2>まとめ</h2>
+
+<p>今回ハマった6つのポイントを振り返ります。</p>
+
+<ul>
+<li><code>pnpm create vite</code> はディレクトリのネストに注意</li>
+<li>Vite テンプレートの <code>App.css</code> import は不要なら消す</li>
+<li>Workers Assets と Hono を併用するなら <code>run_worker_first</code> を設定</li>
+<li>Workers Assets と Cloudflare Pages は別物、検索ワードに注意</li>
+<li>初回デプロイ前に workers.dev サブドメインを登録</li>
+<li>Tailwind CSS v4 は設定ファイルゼロ、古い記事を信じない</li>
+</ul>
+
+<p>特に Workers Assets まわりと Tailwind v4 まわりは、情報の鮮度が大事だなと感じました。エコシステムの変化が速い領域では、公式ドキュメントを優先的に読むクセをつけるのが結局一番の近道です。</p>
+
+<p>同じ構成にチャレンジする方の参考になれば嬉しいです。</p>
+
+<p>インストールから本番デプロイまでの手順をまとめた手順書は、<a href="https://sirajira-sajiki-tech.com/cloudflare-workers-hono-react-d1-drizzle-orm-%e3%81%ae%e3%82%bb%e3%83%83%e3%83%88%e3%82%a2%e3%83%83%e3%83%97%e6%89%8b%e9%a0%86%e6%9b%b8">姉妹記事「Cloudflare Workers + Hono + React + D1 + Drizzle ORM のセットアップ手順書」</a>として公開しています。こちらも合わせてどうぞ。</p>
+
+<h2>参考リンク</h2>
+
+<ul>
+<li>Cloudflare Workers 公式: https://developers.cloudflare.com/workers/</li>
+<li>Cloudflare D1 公式: https://developers.cloudflare.com/d1/</li>
+<li>Workers Assets 公式: https://developers.cloudflare.com/workers/static-assets/</li>
+<li>Hono 公式: https://hono.dev/</li>
+<li>Drizzle ORM 公式: https://orm.drizzle.team/</li>
+<li>Tailwind CSS v4 公式: https://tailwindcss.com/docs/installation/using-vite</li>
+<li>Vite 公式: https://vite.dev/</li>
+</ul>

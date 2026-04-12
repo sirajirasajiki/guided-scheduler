@@ -1,73 +1,71 @@
-# React + TypeScript + Vite
+# guided-scheduler
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+飲み会・イベントの日程調整と店候補共有を行う Web ツール。
 
-Currently, two official plugins are available:
+React (Vite) + Hono を単一の Cloudflare Worker で配信する構成。
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+---
 
-## React Compiler
+## 技術スタック
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+| 役割 | 技術 |
+|------|------|
+| フロントエンド | React + Vite + TypeScript + Tailwind CSS v4 |
+| バックエンド | Hono + TypeScript |
+| DB | Cloudflare D1 (SQLite) |
+| ORM | Drizzle ORM |
+| 実行環境 | Cloudflare Workers + Workers Assets |
+| パッケージ管理 | pnpm |
 
-## Expanding the ESLint configuration
+---
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+## セットアップ
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+pnpm install
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+`wrangler.toml` は `.gitignore` 対象のため、新規セットアップ時は別途用意すること。
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+---
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+## 開発コマンド
+
+```bash
+# ローカル開発（wrangler dev）
+pnpm dev
+
+# フロントエンドビルドのみ
+pnpm build
+
+# ビルド → wrangler dev でビルド後の動作確認
+pnpm preview
 ```
+
+ローカル開発時は `http://localhost:8787` でアクセスできる。
+
+---
+
+## DB マイグレーション
+
+```bash
+# マイグレーションファイル生成（schema.ts の変更後に実行）
+pnpm db:generate
+
+# ローカル D1 へ適用
+pnpm db:migrate
+
+# 本番 D1 へ適用
+pnpm db:migrate:prod
+```
+
+---
+
+## デプロイ
+
+```bash
+# ビルド → Cloudflare Workers へデプロイ
+pnpm deploy
+```
+
+デプロイ先: `https://guided-scheduler.sirajira.workers.dev`
