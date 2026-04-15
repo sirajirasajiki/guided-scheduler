@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { eq } from "drizzle-orm";
 import { createDb } from "../db/client";
-import { events, participants } from "../db/schema";
+import { events, participants, restaurants } from "../db/schema";
 import type {
   CreateEventRequest,
   CreateEventResponse,
@@ -11,6 +11,8 @@ import type {
   SubmitParticipantResponse,
   ConfirmDateRequest,
   ResponseValue,
+  AddRestaurantRequest,
+  AddRestaurantResponse,
 } from "../../shared/types";
 
 type Bindings = {
@@ -78,6 +80,12 @@ eventsRoute.get("/admin/:adminToken", async (c) => {
     .where(eq(participants.eventId, event.id))
     .all();
 
+  const restaurantRows = await db
+    .select()
+    .from(restaurants)
+    .where(eq(restaurants.eventId, event.id))
+    .all();
+
   const res: GetEventAdminResponse = {
     eventId: event.id,
     name: event.name,
@@ -88,6 +96,13 @@ eventsRoute.get("/admin/:adminToken", async (c) => {
       name: p.name,
       responses: JSON.parse(p.responses) as Record<string, ResponseValue>,
       createdAt: p.createdAt,
+    })),
+    restaurants: restaurantRows.map((r) => ({
+      id: r.id,
+      name: r.name,
+      url: r.url,
+      memo: r.memo,
+      createdAt: r.createdAt,
     })),
     createdAt: event.createdAt,
   };
@@ -109,11 +124,24 @@ eventsRoute.get("/share/:shareToken", async (c) => {
     return c.json({ error: "イベントが見つかりません" }, 404);
   }
 
+  const restaurantRows = await db
+    .select()
+    .from(restaurants)
+    .where(eq(restaurants.eventId, event.id))
+    .all();
+
   const res: GetEventShareResponse = {
     eventId: event.id,
     name: event.name,
     candidateDates: JSON.parse(event.candidateDates) as string[],
     confirmedDate: event.confirmedDate,
+    restaurants: restaurantRows.map((r) => ({
+      id: r.id,
+      name: r.name,
+      url: r.url,
+      memo: r.memo,
+      createdAt: r.createdAt,
+    })),
   };
   return c.json(res);
 });
@@ -205,6 +233,43 @@ eventsRoute.patch("/admin/:adminToken/confirm", async (c) => {
     .where(eq(events.adminToken, adminToken));
 
   return c.json({ confirmedDate: body.date });
+});
+
+// POST /api/events/admin/:adminToken/restaurants — 店候補追加
+eventsRoute.post("/admin/:adminToken/restaurants", async (c) => {
+  const { adminToken } = c.req.param();
+  const body = await c.req.json<AddRestaurantRequest>();
+  const db = createDb(c.env.DB);
+
+  const event = await db
+    .select()
+    .from(events)
+    .where(eq(events.adminToken, adminToken))
+    .get();
+
+  if (!event) {
+    return c.json({ error: "イベントが見つかりません" }, 404);
+  }
+
+  if (!body.name || typeof body.name !== "string" || body.name.trim() === "") {
+    return c.json({ error: "name は必須です" }, 400);
+  }
+
+  const now = Math.floor(Date.now() / 1000);
+
+  const newRestaurant = {
+    id: crypto.randomUUID(),
+    eventId: event.id,
+    name: body.name.trim(),
+    url: body.url?.trim() || null,
+    memo: body.memo?.trim() || null,
+    createdAt: now,
+  };
+
+  await db.insert(restaurants).values(newRestaurant);
+
+  const res: AddRestaurantResponse = { restaurantId: newRestaurant.id };
+  return c.json(res, 201);
 });
 
 export default eventsRoute;

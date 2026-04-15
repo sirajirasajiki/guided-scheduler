@@ -105,6 +105,32 @@ export default function Event() {
           <p className="text-gray-500 text-sm mb-6">候補日への参加可否を回答してください</p>
         )}
 
+        {event.restaurants.length > 0 && (
+          <div className="mb-6">
+            <p className="text-sm font-medium text-gray-700 mb-2">店候補</p>
+            <ul className="space-y-2">
+              {event.restaurants.map((r) => (
+                <li key={r.id} className="border border-gray-100 rounded-lg p-3">
+                  <p className="text-sm font-medium text-gray-800">{r.name}</p>
+                  {r.url && (
+                    <a
+                      href={r.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-xs text-blue-600 hover:underline break-all"
+                    >
+                      {r.url}
+                    </a>
+                  )}
+                  {r.memo && (
+                    <p className="text-xs text-gray-500 mt-1">{r.memo}</p>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
         <form onSubmit={handleSubmit} className="space-y-6">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
