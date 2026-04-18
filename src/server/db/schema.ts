@@ -30,3 +30,15 @@ export const restaurants = sqliteTable("restaurants", {
   memo: text("memo"),
   createdAt: integer("created_at").notNull(),
 });
+
+export const restaurantVotes = sqliteTable("restaurant_votes", {
+  id: text("id").primaryKey(),
+  eventId: text("event_id")
+    .notNull()
+    .references(() => events.id),
+  restaurantId: text("restaurant_id")
+    .notNull()
+    .references(() => restaurants.id),
+  participantName: text("participant_name").notNull(),
+  createdAt: integer("created_at").notNull(),
+});

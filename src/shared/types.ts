@@ -26,7 +26,13 @@ export type RestaurantRow = {
   name: string;
   url: string | null;
   memo: string | null;
+  voteCount: number;
   createdAt: number;
+};
+
+export type VoteRow = {
+  restaurantId: string;
+  participantName: string;
 };
 
 export type GetEventAdminResponse = {
@@ -36,6 +42,7 @@ export type GetEventAdminResponse = {
   confirmedDate: string | null;
   participants: ParticipantRow[];
   restaurants: RestaurantRow[];
+  votes: VoteRow[];
   createdAt: number;
 };
 
@@ -72,4 +79,14 @@ export type AddRestaurantRequest = {
 
 export type AddRestaurantResponse = {
   restaurantId: string;
+};
+
+// --- 店への投票 ---
+export type VoteRestaurantRequest = {
+  participantName: string;
+  restaurantId: string;
+};
+
+export type VoteRestaurantResponse = {
+  voteId: string;
 };

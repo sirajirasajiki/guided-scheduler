@@ -8,6 +8,8 @@ import type {
   ConfirmDateRequest,
   AddRestaurantRequest,
   AddRestaurantResponse,
+  VoteRestaurantRequest,
+  VoteRestaurantResponse,
 } from "../../shared/types";
 
 async function request<T>(
@@ -58,6 +60,13 @@ export const api = {
   addRestaurant(adminToken: string, data: AddRestaurantRequest) {
     return request<AddRestaurantResponse>(
       `/api/events/admin/${adminToken}/restaurants`,
+      { method: "POST", body: JSON.stringify(data) }
+    );
+  },
+
+  voteRestaurant(shareToken: string, data: VoteRestaurantRequest) {
+    return request<VoteRestaurantResponse>(
+      `/api/events/share/${shareToken}/votes`,
       { method: "POST", body: JSON.stringify(data) }
     );
   },

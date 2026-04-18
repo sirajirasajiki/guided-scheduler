@@ -11,7 +11,21 @@
       "Bash(pnpm db:generate)",
       "Bash(pnpm db:migrate)",
       "Bash(pnpm typecheck *)",
-      "Bash(npx tsc *)"
+      "Bash(npx tsc *)",
+      "Bash(pnpm tsc *)",
+      "Bash(pnpm dev *)",
+      "Bash(curl -s -X POST http://127.0.0.1:8787/api/events -H \"Content-Type: application/json\" -d '{\"name\":\"テストイベント\",\"candidateDates\":[\"2026-05-01\",\"2026-05-02\",\"2026-05-03\"]}')",
+      "Bash(python -m json.tool)",
+      "Bash(curl -s -X POST http://127.0.0.1:8787/api/events -H \"Content-Type: application/json\" -d \"{\\\\\"name\\\\\":\\\\\"テストイベント\\\\\",\\\\\"candidateDates\\\\\":[\\\\\"2026-05-01\\\\\",\\\\\"2026-05-02\\\\\",\\\\\"2026-05-03\\\\\"]}\")",
+      "Bash(curl -s -X POST http://127.0.0.1:8787/api/events/admin/5b341165-e0a6-4aa6-a315-55a34b02c8c1/restaurants -H 'Content-Type: application/json' -d '{\"name\":\"焼肉A\",\"memo\":\"リーズナブル\"}')",
+      "Bash(curl -s -X POST http://127.0.0.1:8787/api/events/admin/5b341165-e0a6-4aa6-a315-55a34b02c8c1/restaurants -H 'Content-Type: application/json' -d '{\"name\":\"寿司B\"}')",
+      "Bash(curl -s -X POST http://127.0.0.1:8787/api/events/share/6e2f1eaf-80ca-4b67-aa58-c748b96764e4/participants -H 'Content-Type: application/json' -d '{\"name\":\"田中\",\"responses\":{\"2026-05-01\":\"o\",\"2026-05-02\":\"d\",\"2026-05-03\":\"x\"}}')",
+      "Bash(curl -s -X POST http://127.0.0.1:8787/api/events/share/6e2f1eaf-80ca-4b67-aa58-c748b96764e4/participants -H 'Content-Type: application/json' -d '{\"name\":\"山田\",\"responses\":{\"2026-05-01\":\"o\",\"2026-05-02\":\"o\",\"2026-05-03\":\"d\"}}')",
+      "Bash(curl -s -X POST http://127.0.0.1:8787/api/events/share/6e2f1eaf-80ca-4b67-aa58-c748b96764e4/votes -H 'Content-Type: application/json' -d '{\"participantName\":\"田中\",\"restaurantId\":\"e729afd8-fb90-4e1d-bac2-93f260db7c89\"}')",
+      "Bash(curl -s -X POST http://127.0.0.1:8787/api/events/share/6e2f1eaf-80ca-4b67-aa58-c748b96764e4/votes -H 'Content-Type: application/json' -d '{\"participantName\":\"山田\",\"restaurantId\":\"8f5037f2-1e9d-42b6-99a3-c04836b6a262\"}')",
+      "Bash(curl -s -X POST http://127.0.0.1:8787/api/events/share/6e2f1eaf-80ca-4b67-aa58-c748b96764e4/votes -H 'Content-Type: application/json' -d '{\"participantName\":\"田中\",\"restaurantId\":\"8f5037f2-1e9d-42b6-99a3-c04836b6a262\"}')",
+      "Bash(curl -s http://127.0.0.1:8787/api/events/admin/5b341165-e0a6-4aa6-a315-55a34b02c8c1)",
+      "Bash(node -e \"const d=JSON.parse\\(require\\('fs'\\).readFileSync\\('/dev/stdin','utf8'\\)\\); console.log\\('restaurants:', JSON.stringify\\(d.restaurants,null,2\\)\\); console.log\\('votes:', JSON.stringify\\(d.votes,null,2\\)\\);\")"
     ]
   }
 }
