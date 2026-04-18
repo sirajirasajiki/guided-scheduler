@@ -22,14 +22,10 @@ export default function Event() {
 
   const [name, setName] = useState("");
   const [responses, setResponses] = useState<Record<string, ResponseValue>>({});
+  const [selectedRestaurantId, setSelectedRestaurantId] = useState<string | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [submitted, setSubmitted] = useState(false);
-
-  const [votedRestaurantId, setVotedRestaurantId] = useState<string | null>(null);
-  const [voteLoading, setVoteLoading] = useState(false);
-  const [voteError, setVoteError] = useState<string | null>(null);
-  const [voteSuccess, setVoteSuccess] = useState(false);
 
   useEffect(() => {
     if (!shareToken) return;
@@ -59,6 +55,12 @@ export default function Event() {
     setLoading(true);
     try {
       await api.submitParticipant(shareToken!, { name: name.trim(), responses });
+      if (selectedRestaurantId) {
+        await api.voteRestaurant(shareToken!, {
+          participantName: name.trim(),
+          restaurantId: selectedRestaurantId,
+        });
+      }
       setSubmitted(true);
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : "送信に失敗しました");
@@ -83,69 +85,13 @@ export default function Event() {
     );
   }
 
-  async function handleVote(restaurantId: string) {
-    setVoteError(null);
-    setVoteLoading(true);
-    setVotedRestaurantId(restaurantId);
-    try {
-      await api.voteRestaurant(shareToken!, { participantName: name.trim(), restaurantId });
-      setVoteSuccess(true);
-      // 最新の投票数を反映するためイベント再取得
-      const updated = await api.getEventShare(shareToken!);
-      setEvent(updated);
-    } catch (err) {
-      setVoteError(err instanceof Error ? err.message : "投票に失敗しました");
-      setVotedRestaurantId(null);
-    } finally {
-      setVoteLoading(false);
-    }
-  }
-
   if (submitted) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
-        <div className="bg-white rounded-2xl shadow p-8 w-full max-w-md">
-          <div className="text-center mb-6">
-            <p className="text-4xl mb-4">✅</p>
-            <h2 className="text-xl font-bold text-gray-800 mb-2">回答を送信しました</h2>
-            <p className="text-gray-500 text-sm">ご協力ありがとうございます</p>
-          </div>
-
-          {event && event.restaurants.length > 0 && (
-            <div className="border-t border-gray-100 pt-6">
-              <h3 className="text-sm font-semibold text-gray-700 mb-1">行きたい店に投票しよう</h3>
-              <p className="text-xs text-gray-400 mb-4">1人1票・後から変更可</p>
-              {voteSuccess ? (
-                <p className="text-sm text-green-600 font-medium text-center">
-                  投票しました！
-                </p>
-              ) : (
-                <div className="space-y-2">
-                  {event.restaurants.map((r) => (
-                    <button
-                      key={r.id}
-                      onClick={() => handleVote(r.id)}
-                      disabled={voteLoading}
-                      className={`w-full text-left border rounded-lg p-3 transition-all disabled:opacity-50 ${
-                        votedRestaurantId === r.id
-                          ? "border-blue-500 bg-blue-50"
-                          : "border-gray-200 hover:border-blue-300 hover:bg-blue-50"
-                      }`}
-                    >
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <p className="text-sm font-medium text-gray-800">{r.name}</p>
-                          {r.memo && <p className="text-xs text-gray-500">{r.memo}</p>}
-                        </div>
-                        <span className="text-xs text-gray-400 ml-2">{r.voteCount} 票</span>
-                      </div>
-                    </button>
-                  ))}
-                  {voteError && <p className="text-sm text-red-500">{voteError}</p>}
-                </div>
-              )}
-            </div>
-          )}
+        <div className="bg-white rounded-2xl shadow p-8 w-full max-w-md text-center">
+          <p className="text-4xl mb-4">✅</p>
+          <h2 className="text-xl font-bold text-gray-800 mb-2">回答を送信しました</h2>
+          <p className="text-gray-500 text-sm">ご協力ありがとうございます</p>
         </div>
       </div>
     );
@@ -164,35 +110,6 @@ export default function Event() {
           </div>
         ) : (
           <p className="text-gray-500 text-sm mb-6">候補日への参加可否を回答してください</p>
-        )}
-
-        {event.restaurants.length > 0 && (
-          <div className="mb-6">
-            <p className="text-sm font-medium text-gray-700 mb-2">店候補</p>
-            <ul className="space-y-2">
-              {event.restaurants.map((r) => (
-                <li key={r.id} className="border border-gray-100 rounded-lg p-3">
-                  <div className="flex items-center justify-between">
-                    <p className="text-sm font-medium text-gray-800">{r.name}</p>
-                    <span className="text-xs text-gray-400">{r.voteCount} 票</span>
-                  </div>
-                  {r.url && (
-                    <a
-                      href={r.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-xs text-blue-600 hover:underline break-all"
-                    >
-                      {r.url}
-                    </a>
-                  )}
-                  {r.memo && (
-                    <p className="text-xs text-gray-500 mt-1">{r.memo}</p>
-                  )}
-                </li>
-              ))}
-            </ul>
-          </div>
         )}
 
         <form onSubmit={handleSubmit} className="space-y-6">
@@ -235,6 +152,48 @@ export default function Event() {
               ))}
             </div>
           </div>
+
+          {event.restaurants.length > 0 && (
+            <div>
+              <p className="text-sm font-medium text-gray-700 mb-1">行きたい店（任意・1票）</p>
+              <p className="text-xs text-gray-400 mb-3">現在の票数も参考にどうぞ</p>
+              <div className="space-y-2">
+                {event.restaurants.map((r) => (
+                  <button
+                    key={r.id}
+                    type="button"
+                    onClick={() =>
+                      setSelectedRestaurantId((prev) => (prev === r.id ? null : r.id))
+                    }
+                    className={`w-full text-left border rounded-lg p-3 transition-all ${
+                      selectedRestaurantId === r.id
+                        ? "border-blue-500 bg-blue-50"
+                        : "border-gray-200 hover:border-blue-300 hover:bg-blue-50"
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm font-medium text-gray-800">{r.name}</p>
+                        {r.memo && <p className="text-xs text-gray-500">{r.memo}</p>}
+                        {r.url && (
+                          <a
+                            href={r.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            onClick={(e) => e.stopPropagation()}
+                            className="text-xs text-blue-600 hover:underline break-all"
+                          >
+                            {r.url}
+                          </a>
+                        )}
+                      </div>
+                      <span className="text-xs text-gray-400 ml-3 shrink-0">{r.voteCount} 票</span>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
 
           {submitError && <p className="text-sm text-red-500">{submitError}</p>}
 
