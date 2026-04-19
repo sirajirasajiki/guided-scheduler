@@ -112,9 +112,8 @@ export default function Admin() {
     for (const item of p.allergies.items) {
       allergyCountMap[item] = (allergyCountMap[item] ?? 0) + 1;
     }
-    if (p.allergies.otherText) {
-      const key = p.allergies.otherText;
-      otherAllergyCountMap[key] = (otherAllergyCountMap[key] ?? 0) + 1;
+    for (const item of p.allergies.otherItems ?? []) {
+      otherAllergyCountMap[item] = (otherAllergyCountMap[item] ?? 0) + 1;
     }
   }
   const hasAnyAllergy =

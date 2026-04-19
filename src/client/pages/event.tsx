@@ -57,9 +57,11 @@ export default function Event() {
   function buildAllergyInfo(): AllergyInfo | undefined {
     if (!hasAllergy) return undefined;
     const items = Array.from(selectedAllergens);
-    const effectiveOtherText = otherChecked && otherText.trim() ? otherText.trim() : null;
-    if (items.length === 0 && !effectiveOtherText) return undefined;
-    return { items, otherText: effectiveOtherText };
+    const otherItems = otherChecked
+      ? otherText.split(/[,、\n]/).map((s) => s.trim()).filter(Boolean)
+      : [];
+    if (items.length === 0 && otherItems.length === 0) return undefined;
+    return { items, otherItems };
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -215,12 +217,12 @@ export default function Event() {
                 </label>
 
                 {otherChecked && (
-                  <input
-                    type="text"
+                  <textarea
                     value={otherText}
                     onChange={(e) => setOtherText(e.target.value)}
-                    placeholder="アレルギーの内容を入力"
-                    className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder={"1つずつ改行で入力してください（例：松の実、マンゴー）"}
+                    rows={3}
+                    className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
                   />
                 )}
               </div>
