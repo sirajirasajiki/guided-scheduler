@@ -214,6 +214,7 @@ export default function Event() {
                     className="w-4 h-4 accent-blue-600"
                   />
                   <span className="text-sm text-gray-700">その他</span>
+                  <span className="text-xs text-gray-400">例: 松の実, マンゴー</span>
                 </label>
 
                 {otherChecked && (
