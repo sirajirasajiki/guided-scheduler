@@ -1,6 +1,14 @@
 // 候補日への回答値
 export type ResponseValue = "o" | "d" | "x";
 
+// アレルギー情報
+export const ALLERGEN_LIST = ["卵", "乳", "小麦", "えび", "かに", "そば", "落花生", "くるみ"] as const;
+
+export type AllergyInfo = {
+  items: string[]; // ALLERGEN_LIST から選択したもの
+  otherText: string | null; // 「その他」の内容（チェックなし時は null）
+};
+
 // --- イベント作成 ---
 export type CreateEventRequest = {
   name: string;
@@ -18,6 +26,7 @@ export type ParticipantRow = {
   id: string;
   name: string;
   responses: Record<string, ResponseValue>; // { "2026-05-01": "o", ... }
+  allergies: AllergyInfo | null;
   createdAt: number;
 };
 
@@ -26,13 +35,7 @@ export type RestaurantRow = {
   name: string;
   url: string | null;
   memo: string | null;
-  voteCount: number;
   createdAt: number;
-};
-
-export type VoteRow = {
-  restaurantId: string;
-  participantName: string;
 };
 
 export type GetEventAdminResponse = {
@@ -42,7 +45,6 @@ export type GetEventAdminResponse = {
   confirmedDate: string | null;
   participants: ParticipantRow[];
   restaurants: RestaurantRow[];
-  votes: VoteRow[];
   createdAt: number;
 };
 
@@ -59,6 +61,7 @@ export type GetEventShareResponse = {
 export type SubmitParticipantRequest = {
   name: string;
   responses: Record<string, ResponseValue>;
+  allergies?: AllergyInfo;
 };
 
 export type SubmitParticipantResponse = {
@@ -79,14 +82,4 @@ export type AddRestaurantRequest = {
 
 export type AddRestaurantResponse = {
   restaurantId: string;
-};
-
-// --- 店への投票 ---
-export type VoteRestaurantRequest = {
-  participantName: string;
-  restaurantId: string;
-};
-
-export type VoteRestaurantResponse = {
-  voteId: string;
 };

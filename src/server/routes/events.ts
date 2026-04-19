@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { eq } from "drizzle-orm";
 import { createDb } from "../db/client";
-import { events, participants, restaurants, restaurantVotes } from "../db/schema";
+import { events, participants, restaurants } from "../db/schema";
 import type {
   CreateEventRequest,
   CreateEventResponse,
@@ -11,10 +11,9 @@ import type {
   SubmitParticipantResponse,
   ConfirmDateRequest,
   ResponseValue,
+  AllergyInfo,
   AddRestaurantRequest,
   AddRestaurantResponse,
-  VoteRestaurantRequest,
-  VoteRestaurantResponse,
 } from "../../shared/types";
 
 type Bindings = {
@@ -88,17 +87,6 @@ eventsRoute.get("/admin/:adminToken", async (c) => {
     .where(eq(restaurants.eventId, event.id))
     .all();
 
-  const voteRows = await db
-    .select()
-    .from(restaurantVotes)
-    .where(eq(restaurantVotes.eventId, event.id))
-    .all();
-
-  const voteCountMap: Record<string, number> = {};
-  for (const v of voteRows) {
-    voteCountMap[v.restaurantId] = (voteCountMap[v.restaurantId] ?? 0) + 1;
-  }
-
   const res: GetEventAdminResponse = {
     eventId: event.id,
     name: event.name,
@@ -108,6 +96,7 @@ eventsRoute.get("/admin/:adminToken", async (c) => {
       id: p.id,
       name: p.name,
       responses: JSON.parse(p.responses) as Record<string, ResponseValue>,
+      allergies: p.allergies ? (JSON.parse(p.allergies) as AllergyInfo) : null,
       createdAt: p.createdAt,
     })),
     restaurants: restaurantRows.map((r) => ({
@@ -115,12 +104,7 @@ eventsRoute.get("/admin/:adminToken", async (c) => {
       name: r.name,
       url: r.url,
       memo: r.memo,
-      voteCount: voteCountMap[r.id] ?? 0,
       createdAt: r.createdAt,
-    })),
-    votes: voteRows.map((v) => ({
-      restaurantId: v.restaurantId,
-      participantName: v.participantName,
     })),
     createdAt: event.createdAt,
   };
@@ -148,17 +132,6 @@ eventsRoute.get("/share/:shareToken", async (c) => {
     .where(eq(restaurants.eventId, event.id))
     .all();
 
-  const shareVoteRows = await db
-    .select()
-    .from(restaurantVotes)
-    .where(eq(restaurantVotes.eventId, event.id))
-    .all();
-
-  const shareVoteCountMap: Record<string, number> = {};
-  for (const v of shareVoteRows) {
-    shareVoteCountMap[v.restaurantId] = (shareVoteCountMap[v.restaurantId] ?? 0) + 1;
-  }
-
   const res: GetEventShareResponse = {
     eventId: event.id,
     name: event.name,
@@ -169,7 +142,6 @@ eventsRoute.get("/share/:shareToken", async (c) => {
       name: r.name,
       url: r.url,
       memo: r.memo,
-      voteCount: shareVoteCountMap[r.id] ?? 0,
       createdAt: r.createdAt,
     })),
   };
@@ -199,6 +171,7 @@ eventsRoute.post("/share/:shareToken/participants", async (c) => {
     return c.json({ error: "responses は必須です" }, 400);
   }
 
+  const allergiesJson = body.allergies ? JSON.stringify(body.allergies) : null;
   const now = Math.floor(Date.now() / 1000);
 
   // 同名参加者が既にいる場合は回答を上書き
@@ -215,7 +188,7 @@ eventsRoute.post("/share/:shareToken/participants", async (c) => {
   if (duplicate) {
     await db
       .update(participants)
-      .set({ responses: JSON.stringify(body.responses) })
+      .set({ responses: JSON.stringify(body.responses), allergies: allergiesJson })
       .where(eq(participants.id, duplicate.id));
 
     const res: SubmitParticipantResponse = { participantId: duplicate.id };
@@ -227,6 +200,7 @@ eventsRoute.post("/share/:shareToken/participants", async (c) => {
     eventId: event.id,
     name: body.name.trim(),
     responses: JSON.stringify(body.responses),
+    allergies: allergiesJson,
     createdAt: now,
   };
 
@@ -299,76 +273,6 @@ eventsRoute.post("/admin/:adminToken/restaurants", async (c) => {
   await db.insert(restaurants).values(newRestaurant);
 
   const res: AddRestaurantResponse = { restaurantId: newRestaurant.id };
-  return c.json(res, 201);
-});
-
-// POST /api/events/share/:shareToken/votes — 店への投票（1人1店、再投票は上書き）
-eventsRoute.post("/share/:shareToken/votes", async (c) => {
-  const { shareToken } = c.req.param();
-  const body = await c.req.json<VoteRestaurantRequest>();
-  const db = createDb(c.env.DB);
-
-  const event = await db
-    .select()
-    .from(events)
-    .where(eq(events.shareToken, shareToken))
-    .get();
-
-  if (!event) {
-    return c.json({ error: "イベントが見つかりません" }, 404);
-  }
-
-  if (!body.participantName || typeof body.participantName !== "string" || body.participantName.trim() === "") {
-    return c.json({ error: "participantName は必須です" }, 400);
-  }
-  if (!body.restaurantId || typeof body.restaurantId !== "string") {
-    return c.json({ error: "restaurantId は必須です" }, 400);
-  }
-
-  const restaurant = await db
-    .select()
-    .from(restaurants)
-    .where(eq(restaurants.id, body.restaurantId))
-    .get();
-
-  if (!restaurant || restaurant.eventId !== event.id) {
-    return c.json({ error: "店候補が見つかりません" }, 404);
-  }
-
-  const now = Math.floor(Date.now() / 1000);
-
-  // 同名参加者の既存投票を上書き
-  const existing = await db
-    .select()
-    .from(restaurantVotes)
-    .where(eq(restaurantVotes.eventId, event.id))
-    .all();
-
-  const duplicate = existing.find(
-    (v) => v.participantName === body.participantName.trim()
-  );
-
-  if (duplicate) {
-    await db
-      .update(restaurantVotes)
-      .set({ restaurantId: body.restaurantId, createdAt: now })
-      .where(eq(restaurantVotes.id, duplicate.id));
-
-    const res: VoteRestaurantResponse = { voteId: duplicate.id };
-    return c.json(res);
-  }
-
-  const newVote = {
-    id: crypto.randomUUID(),
-    eventId: event.id,
-    restaurantId: body.restaurantId,
-    participantName: body.participantName.trim(),
-    createdAt: now,
-  };
-
-  await db.insert(restaurantVotes).values(newVote);
-
-  const res: VoteRestaurantResponse = { voteId: newVote.id };
   return c.json(res, 201);
 });
 

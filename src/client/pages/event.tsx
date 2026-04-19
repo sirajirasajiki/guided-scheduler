@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import { api } from "../lib/api";
-import type { GetEventShareResponse, ResponseValue } from "../../shared/types";
+import type { GetEventShareResponse, ResponseValue, AllergyInfo } from "../../shared/types";
+import { ALLERGEN_LIST } from "../../shared/types";
 
 const LABELS: Record<ResponseValue, string> = { o: "◯", d: "△", x: "×" };
 const COLORS: Record<ResponseValue, string> = {
@@ -22,7 +23,13 @@ export default function Event() {
 
   const [name, setName] = useState("");
   const [responses, setResponses] = useState<Record<string, ResponseValue>>({});
-  const [selectedRestaurantId, setSelectedRestaurantId] = useState<string | null>(null);
+
+  // アレルギー状態
+  const [hasAllergy, setHasAllergy] = useState(false);
+  const [selectedAllergens, setSelectedAllergens] = useState<Set<string>>(new Set());
+  const [otherChecked, setOtherChecked] = useState(false);
+  const [otherText, setOtherText] = useState("");
+
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [submitted, setSubmitted] = useState(false);
@@ -36,6 +43,23 @@ export default function Event() {
 
   function setResponse(date: string, value: ResponseValue) {
     setResponses((prev) => ({ ...prev, [date]: value }));
+  }
+
+  function toggleAllergen(item: string) {
+    setSelectedAllergens((prev) => {
+      const next = new Set(prev);
+      if (next.has(item)) next.delete(item);
+      else next.add(item);
+      return next;
+    });
+  }
+
+  function buildAllergyInfo(): AllergyInfo | undefined {
+    if (!hasAllergy) return undefined;
+    const items = Array.from(selectedAllergens);
+    const effectiveOtherText = otherChecked && otherText.trim() ? otherText.trim() : null;
+    if (items.length === 0 && !effectiveOtherText) return undefined;
+    return { items, otherText: effectiveOtherText };
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -54,13 +78,11 @@ export default function Event() {
 
     setLoading(true);
     try {
-      await api.submitParticipant(shareToken!, { name: name.trim(), responses });
-      if (selectedRestaurantId) {
-        await api.voteRestaurant(shareToken!, {
-          participantName: name.trim(),
-          restaurantId: selectedRestaurantId,
-        });
-      }
+      await api.submitParticipant(shareToken!, {
+        name: name.trim(),
+        responses,
+        allergies: buildAllergyInfo(),
+      });
       setSubmitted(true);
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : "送信に失敗しました");
@@ -153,43 +175,80 @@ export default function Event() {
             </div>
           </div>
 
+          {/* アレルギー情報 */}
+          <div className="border border-gray-200 rounded-lg p-4 space-y-3">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={hasAllergy}
+                onChange={(e) => setHasAllergy(e.target.checked)}
+                className="w-4 h-4 accent-blue-600"
+              />
+              <span className="text-sm font-medium text-gray-700">アレルギーがありますか？</span>
+            </label>
+
+            {hasAllergy && (
+              <div className="space-y-2 pt-1">
+                <p className="text-xs text-gray-500">該当するものをすべて選択してください</p>
+                <div className="grid grid-cols-2 gap-x-4 gap-y-2">
+                  {ALLERGEN_LIST.map((item) => (
+                    <label key={item} className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={selectedAllergens.has(item)}
+                        onChange={() => toggleAllergen(item)}
+                        className="w-4 h-4 accent-blue-600"
+                      />
+                      <span className="text-sm text-gray-700">{item}</span>
+                    </label>
+                  ))}
+                </div>
+
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={otherChecked}
+                    onChange={(e) => setOtherChecked(e.target.checked)}
+                    className="w-4 h-4 accent-blue-600"
+                  />
+                  <span className="text-sm text-gray-700">その他</span>
+                </label>
+
+                {otherChecked && (
+                  <input
+                    type="text"
+                    value={otherText}
+                    onChange={(e) => setOtherText(e.target.value)}
+                    placeholder="アレルギーの内容を入力"
+                    className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                )}
+              </div>
+            )}
+          </div>
+
           {event.restaurants.length > 0 && (
             <div>
-              <p className="text-sm font-medium text-gray-700 mb-1">行きたい店（任意・1票）</p>
-              <p className="text-xs text-gray-400 mb-3">現在の票数も参考にどうぞ</p>
+              <p className="text-sm font-medium text-gray-700 mb-2">店候補</p>
               <div className="space-y-2">
                 {event.restaurants.map((r) => (
-                  <button
+                  <div
                     key={r.id}
-                    type="button"
-                    onClick={() =>
-                      setSelectedRestaurantId((prev) => (prev === r.id ? null : r.id))
-                    }
-                    className={`w-full text-left border rounded-lg p-3 transition-all ${
-                      selectedRestaurantId === r.id
-                        ? "border-blue-500 bg-blue-50"
-                        : "border-gray-200 hover:border-blue-300 hover:bg-blue-50"
-                    }`}
+                    className="border border-gray-200 rounded-lg p-3"
                   >
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="text-sm font-medium text-gray-800">{r.name}</p>
-                        {r.memo && <p className="text-xs text-gray-500">{r.memo}</p>}
-                        {r.url && (
-                          <a
-                            href={r.url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            onClick={(e) => e.stopPropagation()}
-                            className="text-xs text-blue-600 hover:underline break-all"
-                          >
-                            {r.url}
-                          </a>
-                        )}
-                      </div>
-                      <span className="text-xs text-gray-400 ml-3 shrink-0">{r.voteCount} 票</span>
-                    </div>
-                  </button>
+                    <p className="text-sm font-medium text-gray-800">{r.name}</p>
+                    {r.memo && <p className="text-xs text-gray-500">{r.memo}</p>}
+                    {r.url && (
+                      <a
+                        href={r.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-xs text-blue-600 hover:underline break-all"
+                      >
+                        {r.url}
+                      </a>
+                    )}
+                  </div>
                 ))}
               </div>
             </div>

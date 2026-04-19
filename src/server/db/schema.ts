@@ -17,6 +17,7 @@ export const participants = sqliteTable("participants", {
     .references(() => events.id),
   name: text("name").notNull(),
   responses: text("responses").notNull(), // JSON文字列
+  allergies: text("allergies"), // JSON文字列 (AllergyInfo | null)
   createdAt: integer("created_at").notNull(),
 });
 
@@ -28,17 +29,5 @@ export const restaurants = sqliteTable("restaurants", {
   name: text("name").notNull(),
   url: text("url"),
   memo: text("memo"),
-  createdAt: integer("created_at").notNull(),
-});
-
-export const restaurantVotes = sqliteTable("restaurant_votes", {
-  id: text("id").primaryKey(),
-  eventId: text("event_id")
-    .notNull()
-    .references(() => events.id),
-  restaurantId: text("restaurant_id")
-    .notNull()
-    .references(() => restaurants.id),
-  participantName: text("participant_name").notNull(),
   createdAt: integer("created_at").notNull(),
 });

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import { api } from "../lib/api";
 import type { GetEventAdminResponse, ResponseValue, AddRestaurantRequest } from "../../shared/types";
+import { ALLERGEN_LIST } from "../../shared/types";
 
 const LABELS: Record<ResponseValue, string> = { o: "◯", d: "△", x: "×" };
 const CELL_COLORS: Record<ResponseValue, string> = {
@@ -41,7 +42,6 @@ export default function Admin() {
     setConfirmLoading(true);
     try {
       await api.confirmDate(adminToken!, { date });
-      // 最新データを再取得
       const updated = await api.getEventAdmin(adminToken!);
       setEvent(updated);
     } catch (err) {
@@ -77,10 +77,6 @@ export default function Admin() {
 
   async function copyShareLink() {
     if (!event) return;
-    // shareToken は管理ページでは直接持っていないため、URLから共有リンクを生成できない
-    // ここでは管理APIレスポンスに shareToken を含めていないので、ページ読み込み時に
-    // 取得した adminToken からの URL を渡す方法はないが、
-    // 代わりに幹事が作成完了画面でコピーしている想定のため簡易表示とする
     // TODO(prod): GetEventAdminResponse に shareToken を含めることを検討
     const url = location.href;
     await navigator.clipboard.writeText(url);
@@ -107,6 +103,21 @@ export default function Admin() {
   // 候補日ごとの ◯ 人数
   const countO = (date: string) =>
     event.participants.filter((p) => p.responses[date] === "o").length;
+
+  // アレルギー集計
+  const allergyCountMap: Record<string, number> = {};
+  let otherAllergyCount = 0;
+  for (const p of event.participants) {
+    if (!p.allergies) continue;
+    for (const item of p.allergies.items) {
+      allergyCountMap[item] = (allergyCountMap[item] ?? 0) + 1;
+    }
+    if (p.allergies.otherText) {
+      otherAllergyCount += 1;
+    }
+  }
+  const hasAnyAllergy =
+    Object.keys(allergyCountMap).length > 0 || otherAllergyCount > 0;
 
   return (
     <div className="min-h-screen bg-gray-50 p-4">
@@ -206,6 +217,32 @@ export default function Admin() {
           </div>
         )}
 
+        {/* アレルギー情報 */}
+        {hasAnyAllergy && (
+          <div className="bg-white rounded-2xl shadow p-6">
+            <h2 className="text-base font-semibold text-gray-700 mb-1">アレルギー情報</h2>
+            <p className="text-xs text-gray-400 mb-4">個人が特定されないよう、品目と人数のみ表示しています</p>
+            <ul className="space-y-2">
+              {ALLERGEN_LIST.filter((item) => allergyCountMap[item] > 0).map((item) => (
+                <li key={item} className="flex items-center gap-2">
+                  <span className="inline-block w-2 h-2 rounded-full bg-orange-400 shrink-0" />
+                  <span className="text-sm text-gray-700">
+                    {item}アレルギーあり（{allergyCountMap[item]}名）
+                  </span>
+                </li>
+              ))}
+              {otherAllergyCount > 0 && (
+                <li className="flex items-center gap-2">
+                  <span className="inline-block w-2 h-2 rounded-full bg-orange-400 shrink-0" />
+                  <span className="text-sm text-gray-700">
+                    その他のアレルギーあり（{otherAllergyCount}名）
+                  </span>
+                </li>
+              )}
+            </ul>
+          </div>
+        )}
+
         {/* 店候補 */}
         <div className="bg-white rounded-2xl shadow p-6">
           <h2 className="text-base font-semibold text-gray-700 mb-4">店候補</h2>
@@ -216,12 +253,7 @@ export default function Admin() {
             <ul className="space-y-3 mb-6">
               {event.restaurants.map((r) => (
                 <li key={r.id} className="border border-gray-100 rounded-lg p-3">
-                  <div className="flex items-center justify-between">
-                    <p className="text-sm font-medium text-gray-800">{r.name}</p>
-                    <span className="text-xs bg-blue-50 text-blue-600 font-semibold px-2 py-0.5 rounded-full">
-                      {r.voteCount} 票
-                    </span>
-                  </div>
+                  <p className="text-sm font-medium text-gray-800">{r.name}</p>
                   {r.url && (
                     <a
                       href={r.url}
@@ -273,63 +305,6 @@ export default function Admin() {
             </button>
           </form>
         </div>
-
-        {/* 候補日 × 店候補 クロス集計 */}
-        {event.restaurants.length > 0 && event.participants.length > 0 && (
-          <div className="bg-white rounded-2xl shadow p-6 overflow-x-auto">
-            <h2 className="text-base font-semibold text-gray-700 mb-1">日程 × 店候補 クロス集計</h2>
-            <p className="text-xs text-gray-400 mb-4">◯または△の参加者のうち、その店に投票している人数</p>
-            <table className="w-full text-sm">
-              <thead>
-                <tr>
-                  <th className="text-left text-gray-500 font-medium pb-2 pr-4 min-w-[80px]">候補日</th>
-                  {event.restaurants.map((r) => (
-                    <th key={r.id} className="text-center text-gray-500 font-medium pb-2 px-2 min-w-[80px]">
-                      {r.name}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {event.candidateDates.map((date) => {
-                  const availableNames = new Set(
-                    event.participants
-                      .filter((p) => p.responses[date] === "o" || p.responses[date] === "d")
-                      .map((p) => p.name)
-                  );
-                  const voteMap = new Map<string, string[]>();
-                  for (const v of event.votes) {
-                    if (!voteMap.has(v.restaurantId)) voteMap.set(v.restaurantId, []);
-                    voteMap.get(v.restaurantId)!.push(v.participantName);
-                  }
-                  return (
-                    <tr key={date} className="border-t border-gray-100">
-                      <td className="py-2 pr-4 text-gray-700 text-xs">{formatDate(date)}</td>
-                      {event.restaurants.map((r) => {
-                        const voters = (voteMap.get(r.id) ?? []).filter((n) => availableNames.has(n));
-                        return (
-                          <td key={r.id} className="py-2 px-2 text-center">
-                            {voters.length > 0 ? (
-                              <span
-                                title={voters.join(", ")}
-                                className="cursor-default inline-block bg-indigo-50 text-indigo-700 text-xs font-semibold px-2 py-0.5 rounded-full"
-                              >
-                                {voters.length} 人
-                              </span>
-                            ) : (
-                              <span className="text-gray-300 text-xs">—</span>
-                            )}
-                          </td>
-                        );
-                      })}
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-            <p className="text-xs text-gray-400 mt-2">※ 数値にカーソルを合わせると参加者名が表示されます</p>
-          </div>
-        )}
 
         {/* 共有リンク */}
         <div className="bg-white rounded-2xl shadow p-6">
