@@ -58,7 +58,7 @@ export default function Event() {
     if (!hasAllergy) return undefined;
     const items = Array.from(selectedAllergens);
     const otherItems = otherChecked
-      ? otherText.split(/[,、\n]/).map((s) => s.trim()).filter(Boolean)
+      ? otherText.split(/[,，、]/).map((s) => s.trim()).filter(Boolean)
       : [];
     if (items.length === 0 && otherItems.length === 0) return undefined;
     return { items, otherItems };
@@ -217,12 +217,12 @@ export default function Event() {
                 </label>
 
                 {otherChecked && (
-                  <textarea
+                  <input
+                    type="text"
                     value={otherText}
                     onChange={(e) => setOtherText(e.target.value)}
-                    placeholder={"1つずつ改行で入力してください（例：松の実、マンゴー）"}
-                    rows={3}
-                    className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                    placeholder="例: 松の実, マンゴー"
+                    className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 )}
               </div>
