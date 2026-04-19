@@ -106,18 +106,19 @@ export default function Admin() {
 
   // アレルギー集計
   const allergyCountMap: Record<string, number> = {};
-  let otherAllergyCount = 0;
+  const otherAllergyCountMap: Record<string, number> = {};
   for (const p of event.participants) {
     if (!p.allergies) continue;
     for (const item of p.allergies.items) {
       allergyCountMap[item] = (allergyCountMap[item] ?? 0) + 1;
     }
     if (p.allergies.otherText) {
-      otherAllergyCount += 1;
+      const key = p.allergies.otherText;
+      otherAllergyCountMap[key] = (otherAllergyCountMap[key] ?? 0) + 1;
     }
   }
   const hasAnyAllergy =
-    Object.keys(allergyCountMap).length > 0 || otherAllergyCount > 0;
+    Object.keys(allergyCountMap).length > 0 || Object.keys(otherAllergyCountMap).length > 0;
 
   return (
     <div className="min-h-screen bg-gray-50 p-4">
@@ -231,14 +232,14 @@ export default function Admin() {
                   </span>
                 </li>
               ))}
-              {otherAllergyCount > 0 && (
-                <li className="flex items-center gap-2">
+              {Object.entries(otherAllergyCountMap).map(([text, count]) => (
+                <li key={text} className="flex items-center gap-2">
                   <span className="inline-block w-2 h-2 rounded-full bg-orange-400 shrink-0" />
                   <span className="text-sm text-gray-700">
-                    その他のアレルギーあり（{otherAllergyCount}名）
+                    その他: {text}（{count}名）
                   </span>
                 </li>
-              )}
+              ))}
             </ul>
           </div>
         )}
