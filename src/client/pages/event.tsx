@@ -230,33 +230,6 @@ export default function Event() {
             )}
           </div>
 
-          {event.restaurants.length > 0 && (
-            <div>
-              <p className="text-sm font-medium text-gray-700 mb-2">店候補</p>
-              <div className="space-y-2">
-                {event.restaurants.map((r) => (
-                  <div
-                    key={r.id}
-                    className="border border-gray-200 rounded-lg p-3"
-                  >
-                    <p className="text-sm font-medium text-gray-800">{r.name}</p>
-                    {r.memo && <p className="text-xs text-gray-500">{r.memo}</p>}
-                    {r.url && (
-                      <a
-                        href={r.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-xs text-blue-600 hover:underline break-all"
-                      >
-                        {r.url}
-                      </a>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
           {submitError && <p className="text-sm text-red-500">{submitError}</p>}
 
           <button

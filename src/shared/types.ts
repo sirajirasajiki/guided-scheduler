@@ -30,21 +30,12 @@ export type ParticipantRow = {
   createdAt: number;
 };
 
-export type RestaurantRow = {
-  id: string;
-  name: string;
-  url: string | null;
-  memo: string | null;
-  createdAt: number;
-};
-
 export type GetEventAdminResponse = {
   eventId: string;
   name: string;
   candidateDates: string[];
   confirmedDate: string | null;
   participants: ParticipantRow[];
-  restaurants: RestaurantRow[];
   createdAt: number;
 };
 
@@ -54,7 +45,6 @@ export type GetEventShareResponse = {
   name: string;
   candidateDates: string[];
   confirmedDate: string | null;
-  restaurants: RestaurantRow[];
 };
 
 // --- 回答送信 ---
@@ -71,15 +61,4 @@ export type SubmitParticipantResponse = {
 // --- 確定日決定 ---
 export type ConfirmDateRequest = {
   date: string; // ISO date string
-};
-
-// --- 店候補 ---
-export type AddRestaurantRequest = {
-  name: string;
-  url?: string;
-  memo?: string;
-};
-
-export type AddRestaurantResponse = {
-  restaurantId: string;
 };

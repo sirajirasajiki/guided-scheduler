@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import { api } from "../lib/api";
-import type { GetEventAdminResponse, ResponseValue, AddRestaurantRequest } from "../../shared/types";
+import type { GetEventAdminResponse, ResponseValue } from "../../shared/types";
 import { ALLERGEN_LIST } from "../../shared/types";
 
 const LABELS: Record<ResponseValue, string> = { o: "◯", d: "△", x: "×" };
@@ -24,10 +24,6 @@ export default function Admin() {
   const [confirmError, setConfirmError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
-  const [restaurantForm, setRestaurantForm] = useState<AddRestaurantRequest>({ name: "", url: "", memo: "" });
-  const [restaurantLoading, setRestaurantLoading] = useState(false);
-  const [restaurantError, setRestaurantError] = useState<string | null>(null);
-
   function load() {
     if (!adminToken) return;
     api.getEventAdmin(adminToken)
@@ -48,30 +44,6 @@ export default function Admin() {
       setConfirmError(err instanceof Error ? err.message : "確定に失敗しました");
     } finally {
       setConfirmLoading(false);
-    }
-  }
-
-  async function handleAddRestaurant(e: React.FormEvent) {
-    e.preventDefault();
-    setRestaurantError(null);
-    if (!restaurantForm.name.trim()) {
-      setRestaurantError("店名は必須です");
-      return;
-    }
-    setRestaurantLoading(true);
-    try {
-      await api.addRestaurant(adminToken!, {
-        name: restaurantForm.name.trim(),
-        url: restaurantForm.url?.trim() || undefined,
-        memo: restaurantForm.memo?.trim() || undefined,
-      });
-      setRestaurantForm({ name: "", url: "", memo: "" });
-      const updated = await api.getEventAdmin(adminToken!);
-      setEvent(updated);
-    } catch (err) {
-      setRestaurantError(err instanceof Error ? err.message : "追加に失敗しました");
-    } finally {
-      setRestaurantLoading(false);
     }
   }
 
@@ -242,69 +214,6 @@ export default function Admin() {
             </ul>
           </div>
         )}
-
-        {/* 店候補 */}
-        <div className="bg-white rounded-2xl shadow p-6">
-          <h2 className="text-base font-semibold text-gray-700 mb-4">店候補</h2>
-
-          {event.restaurants.length === 0 ? (
-            <p className="text-gray-400 text-sm mb-4">まだ店候補がありません</p>
-          ) : (
-            <ul className="space-y-3 mb-6">
-              {event.restaurants.map((r) => (
-                <li key={r.id} className="border border-gray-100 rounded-lg p-3">
-                  <p className="text-sm font-medium text-gray-800">{r.name}</p>
-                  {r.url && (
-                    <a
-                      href={r.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-xs text-blue-600 hover:underline break-all"
-                    >
-                      {r.url}
-                    </a>
-                  )}
-                  {r.memo && (
-                    <p className="text-xs text-gray-500 mt-1">{r.memo}</p>
-                  )}
-                </li>
-              ))}
-            </ul>
-          )}
-
-          <form onSubmit={handleAddRestaurant} className="space-y-3">
-            <p className="text-xs font-semibold text-gray-500 uppercase">店候補を追加</p>
-            <input
-              type="text"
-              placeholder="店名 *"
-              value={restaurantForm.name}
-              onChange={(e) => setRestaurantForm((f) => ({ ...f, name: e.target.value }))}
-              className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
-            <input
-              type="url"
-              placeholder="URL（任意）"
-              value={restaurantForm.url}
-              onChange={(e) => setRestaurantForm((f) => ({ ...f, url: e.target.value }))}
-              className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
-            <input
-              type="text"
-              placeholder="メモ（任意）"
-              value={restaurantForm.memo}
-              onChange={(e) => setRestaurantForm((f) => ({ ...f, memo: e.target.value }))}
-              className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
-            {restaurantError && <p className="text-sm text-red-500">{restaurantError}</p>}
-            <button
-              type="submit"
-              disabled={restaurantLoading}
-              className="w-full py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium text-sm disabled:opacity-50"
-            >
-              {restaurantLoading ? "追加中..." : "追加する"}
-            </button>
-          </form>
-        </div>
 
         {/* 共有リンク */}
         <div className="bg-white rounded-2xl shadow p-6">
