@@ -31,7 +31,10 @@
       "Bash(cd *)",
       "Skill(update-config)",
       "Skill(update-config:*)",
-      "Bash(pnpm run *)"
+      "Bash(pnpm run *)",
+      "Bash(npm ls *)",
+      "Bash(pnpm licenses *)",
+      "Bash(grep -v \"^$\\\\|^┌\\\\|^├\\\\|^└\\\\|^│ Package\\\\|^│ License\\\\|^Preview\\\\|^Output\")"
     ]
   }
 }

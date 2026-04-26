@@ -10,15 +10,15 @@ React (Vite) + Hono を単一の Cloudflare Worker で配信する構成。`/api
 
 ## 技術スタック
 
-| 役割 | 技術 |
-|------|------|
+| 役割           | 技術                                        |
+| -------------- | ------------------------------------------- |
 | フロントエンド | React + Vite + TypeScript + Tailwind CSS v4 |
-| バックエンド | Hono + TypeScript |
-| DB | Cloudflare D1 (SQLite) |
-| ORM | Drizzle ORM |
-| ルーティング | react-router-dom v7 |
-| 実行環境 | Cloudflare Workers + Workers Assets |
-| パッケージ管理 | pnpm |
+| バックエンド   | Hono + TypeScript                           |
+| DB             | Cloudflare D1 (SQLite)                      |
+| ORM            | Drizzle ORM                                 |
+| ルーティング   | react-router-dom v7                         |
+| 実行環境       | Cloudflare Workers + Workers Assets         |
+| パッケージ管理 | pnpm                                        |
 
 ---
 
@@ -98,15 +98,22 @@ guided-scheduler/
 ## API エンドポイント一覧
 
 ### `POST /api/events`
+
 イベントを新規作成する。
 
 **リクエスト**
+
 ```json
-{ "name": "5月の飲み会", "candidateDates": ["2026-05-10", "2026-05-17", "2026-05-24"] }
+{
+  "name": "5月の飲み会",
+  "candidateDates": ["2026-05-10", "2026-05-17", "2026-05-24"]
+}
 ```
+
 - `candidateDates`: ISO date string の配列（3〜5 個）
 
 **レスポンス** `201`
+
 ```json
 { "eventId": "...", "adminToken": "...", "shareToken": "..." }
 ```
@@ -114,9 +121,11 @@ guided-scheduler/
 ---
 
 ### `GET /api/events/admin/:adminToken`
+
 管理用トークンでイベント情報と全参加者の回答を取得する。
 
 **レスポンス** `200`
+
 ```json
 {
   "eventId": "...",
@@ -124,7 +133,12 @@ guided-scheduler/
   "candidateDates": ["2026-05-10", "2026-05-17", "2026-05-24"],
   "confirmedDate": null,
   "participants": [
-    { "id": "...", "name": "山田", "responses": { "2026-05-10": "o", "2026-05-17": "x", "2026-05-24": "d" }, "createdAt": 1234567890 }
+    {
+      "id": "...",
+      "name": "山田",
+      "responses": { "2026-05-10": "o", "2026-05-17": "x", "2026-05-24": "d" },
+      "createdAt": 1234567890
+    }
   ],
   "createdAt": 1234567890
 }
@@ -133,25 +147,39 @@ guided-scheduler/
 ---
 
 ### `GET /api/events/share/:shareToken`
+
 共有用トークンでイベント情報を取得する（参加者向け・回答データなし）。
 
 **レスポンス** `200`
+
 ```json
-{ "eventId": "...", "name": "5月の飲み会", "candidateDates": ["..."], "confirmedDate": null }
+{
+  "eventId": "...",
+  "name": "5月の飲み会",
+  "candidateDates": ["..."],
+  "confirmedDate": null
+}
 ```
 
 ---
 
 ### `POST /api/events/share/:shareToken/participants`
+
 参加者の回答を送信する。同名の参加者が既に存在する場合は回答を上書きする。
 
 **リクエスト**
+
 ```json
-{ "name": "山田", "responses": { "2026-05-10": "o", "2026-05-17": "x", "2026-05-24": "d" } }
+{
+  "name": "山田",
+  "responses": { "2026-05-10": "o", "2026-05-17": "x", "2026-05-24": "d" }
+}
 ```
+
 - `responses` の値: `"o"`（◯）/ `"d"`（△）/ `"x"`（×）
 
 **レスポンス** `201`
+
 ```json
 { "participantId": "..." }
 ```
@@ -159,14 +187,17 @@ guided-scheduler/
 ---
 
 ### `PATCH /api/events/admin/:adminToken/confirm`
+
 確定日を決定する。`date` は `candidateDates` のいずれかである必要がある。
 
 **リクエスト**
+
 ```json
 { "date": "2026-05-10" }
 ```
 
 **レスポンス** `200`
+
 ```json
 { "confirmedDate": "2026-05-10" }
 ```
@@ -177,38 +208,44 @@ guided-scheduler/
 
 ### events
 
-| カラム | 型 | 説明 |
-|--------|-----|------|
-| `id` | text (UUID) | PK |
-| `name` | text | イベント名 |
-| `admin_token` | text (UUID) | 管理用トークン（UNIQUE） |
-| `share_token` | text (UUID) | 共有用トークン（UNIQUE） |
-| `candidate_dates` | text | 候補日の JSON 配列（ISO date strings） |
-| `confirmed_date` | text (nullable) | 確定日（ISO date string） |
-| `created_at` | integer | Unix タイムスタンプ |
+| カラム            | 型              | 説明                                   |
+| ----------------- | --------------- | -------------------------------------- |
+| `id`              | text (UUID)     | PK                                     |
+| `name`            | text            | イベント名                             |
+| `admin_token`     | text (UUID)     | 管理用トークン（UNIQUE）               |
+| `share_token`     | text (UUID)     | 共有用トークン（UNIQUE）               |
+| `candidate_dates` | text            | 候補日の JSON 配列（ISO date strings） |
+| `confirmed_date`  | text (nullable) | 確定日（ISO date string）              |
+| `created_at`      | integer         | Unix タイムスタンプ                    |
 
 ### participants
 
-| カラム | 型 | 説明 |
-|--------|-----|------|
-| `id` | text (UUID) | PK |
-| `event_id` | text | FK → events.id |
-| `name` | text | 参加者名 |
-| `responses` | text | 回答の JSON オブジェクト `{ [date]: "o"|"d"|"x" }` |
-| `created_at` | integer | Unix タイムスタンプ |
+| カラム       | 型          | 説明                                    |
+| ------------ | ----------- | --------------------------------------- | --- | ------ |
+| `id`         | text (UUID) | PK                                      |
+| `event_id`   | text        | FK → events.id                          |
+| `name`       | text        | 参加者名                                |
+| `responses`  | text        | 回答の JSON オブジェクト `{ [date]: "o" | "d" | "x" }` |
+| `created_at` | integer     | Unix タイムスタンプ                     |
 
 ---
 
 ## 既知の制約・スコープ外
 
 ### 現時点の既知制約
+
 - 管理ページ（`/admin/:adminToken`）から参加者向け共有リンクを直接コピーできない。共有リンクはイベント作成完了画面でのみ表示される（`GetEventAdminResponse` に `shareToken` が含まれていないため）
 - 認証・認可は一切なし。`adminToken` / `shareToken` を知っている人なら誰でもアクセスできる
 
 ### スコープ外（意図的に実装しない）
+
 - ログイン・パスワード・OAuth などの認証機構
 - メール・LINE などの通知機能
 - 参加者の削除機能（回答の上書きは可）
 - テストコード
 - 自動デプロイ（GitHub Actions 等）
 - パフォーマンス最適化・PWA 化
+
+## ライセンス
+
+[MIT](./LICENSE)
