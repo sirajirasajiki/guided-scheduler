@@ -58,7 +58,7 @@ export default function CreateEvent() {
     const adminUrl = `${location.origin}/admin/${result.adminToken}`;
     const shareUrl = `${location.origin}/event/${result.shareToken}`;
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
+      <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center p-4">
         <div className="bg-white rounded-2xl shadow p-8 w-full max-w-md">
           <h1 className="text-2xl font-bold text-green-600 mb-2">イベントを作成しました</h1>
           <p className="text-gray-500 text-sm mb-6">以下のリンクを保管してください</p>
@@ -109,7 +109,7 @@ export default function CreateEvent() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
+    <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center p-4">
       <div className="bg-white rounded-2xl shadow p-8 w-full max-w-md">
         <h1 className="text-2xl font-bold text-gray-800 mb-1">イベント作成</h1>
         <p className="text-gray-500 text-sm mb-6">日程調整イベントを作成します</p>
@@ -168,6 +168,12 @@ export default function CreateEvent() {
           {error && (
             <p className="text-sm text-red-500">{error}</p>
           )}
+
+          <p className="text-xs text-gray-500 text-center">
+            <a href="/terms" target="_blank" rel="noopener noreferrer" className="underline hover:text-gray-700">利用規約</a>および
+            <a href="/privacy" target="_blank" rel="noopener noreferrer" className="underline hover:text-gray-700">プライバシーポリシー</a>
+            に同意の上、作成してください。
+          </p>
 
           <button
             type="submit"
