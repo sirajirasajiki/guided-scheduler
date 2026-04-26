@@ -6,8 +6,6 @@ import type {
   SubmitParticipantRequest,
   SubmitParticipantResponse,
   ConfirmDateRequest,
-  AddRestaurantRequest,
-  AddRestaurantResponse,
 } from "../../shared/types";
 
 async function request<T>(
@@ -52,13 +50,6 @@ export const api = {
     return request<{ confirmedDate: string }>(
       `/api/events/admin/${adminToken}/confirm`,
       { method: "PATCH", body: JSON.stringify(data) }
-    );
-  },
-
-  addRestaurant(adminToken: string, data: AddRestaurantRequest) {
-    return request<AddRestaurantResponse>(
-      `/api/events/admin/${adminToken}/restaurants`,
-      { method: "POST", body: JSON.stringify(data) }
     );
   },
 };

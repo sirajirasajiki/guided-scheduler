@@ -20,14 +20,3 @@ export const participants = sqliteTable("participants", {
   allergies: text("allergies"), // JSON文字列 (AllergyInfo | null)
   createdAt: integer("created_at").notNull(),
 });
-
-export const restaurants = sqliteTable("restaurants", {
-  id: text("id").primaryKey(),
-  eventId: text("event_id")
-    .notNull()
-    .references(() => events.id),
-  name: text("name").notNull(),
-  url: text("url"),
-  memo: text("memo"),
-  createdAt: integer("created_at").notNull(),
-});
