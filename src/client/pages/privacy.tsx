@@ -2,7 +2,7 @@ import { Link } from "react-router-dom";
 
 export default function Privacy() {
   return (
-    <div className="min-h-screen bg-gray-50 p-4">
+    <div className="flex-1 bg-gray-50 p-4">
       <div className="max-w-2xl mx-auto py-8">
         <div className="mb-4">
           <Link to="/" className="text-sm text-blue-600 hover:underline">
@@ -127,16 +127,7 @@ export default function Privacy() {
               第8条(データの削除について)
             </h2>
             <p>
-              自己のデータの削除を希望する場合は、
-              <a
-                href="https://github.com/sirajirasajiki/guided-scheduler/issues"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-blue-600 underline hover:text-blue-800"
-              >
-                GitHubのIssue
-              </a>
-              よりご連絡ください。サービスの性質上、個別対応を保証するものではありませんが、可能な範囲で対応します。
+              入力されたデータの削除時期は保証されません。DBのリセット等、運営上の都合により予告なく削除される場合があります。
             </p>
           </section>
 

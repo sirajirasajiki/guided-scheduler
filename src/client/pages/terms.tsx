@@ -2,7 +2,7 @@ import { Link } from "react-router-dom";
 
 export default function Terms() {
   return (
-    <div className="min-h-screen bg-gray-50 p-4">
+    <div className="flex-1 bg-gray-50 p-4">
       <div className="max-w-2xl mx-auto py-8">
         <div className="mb-4">
           <Link to="/" className="text-sm text-blue-600 hover:underline">
@@ -155,12 +155,14 @@ export default function Terms() {
             </h2>
             <p>
               個人情報の取り扱いについては、別途定める
-              <Link
-                to="/privacy"
+              <a
+                href="https://guided-scheduler.sirajira.workers.dev/privacy"
+                target="_blank"
+                rel="noopener noreferrer"
                 className="text-blue-600 underline hover:text-blue-800"
               >
                 プライバシーポリシー
-              </Link>
+              </a>
               に従います。
             </p>
           </section>

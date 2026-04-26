@@ -9,14 +9,18 @@ import Footer from "./components/footer";
 function App() {
   return (
     <BrowserRouter>
-      <Routes>
-        <Route path="/" element={<CreateEvent />} />
-        <Route path="/admin/:adminToken" element={<Admin />} />
-        <Route path="/event/:shareToken" element={<Event />} />
-        <Route path="/terms" element={<Terms />} />
-        <Route path="/privacy" element={<Privacy />} />
-      </Routes>
-      <Footer />
+      <div className="min-h-screen flex flex-col">
+        <main className="flex-1 flex flex-col">
+          <Routes>
+            <Route path="/" element={<CreateEvent />} />
+            <Route path="/admin/:adminToken" element={<Admin />} />
+            <Route path="/event/:shareToken" element={<Event />} />
+            <Route path="/terms" element={<Terms />} />
+            <Route path="/privacy" element={<Privacy />} />
+          </Routes>
+        </main>
+        <Footer />
+      </div>
     </BrowserRouter>
   );
 }

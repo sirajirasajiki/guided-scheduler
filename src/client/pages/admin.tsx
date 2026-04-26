@@ -58,7 +58,7 @@ export default function Admin() {
 
   if (fetchError) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
+      <div className="flex-1 bg-gray-50 flex items-center justify-center p-4">
         <p className="text-red-500">{fetchError}</p>
       </div>
     );
@@ -66,7 +66,7 @@ export default function Admin() {
 
   if (!event) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
+      <div className="flex-1 bg-gray-50 flex items-center justify-center p-4">
         <p className="text-gray-400">読み込み中...</p>
       </div>
     );
@@ -92,7 +92,7 @@ export default function Admin() {
     Object.keys(allergyCountMap).length > 0 || Object.keys(otherAllergyCountMap).length > 0;
 
   return (
-    <div className="min-h-screen bg-gray-50 p-4">
+    <div className="flex-1 bg-gray-50 p-4">
       <div className="max-w-2xl mx-auto space-y-6">
         {/* ヘッダー */}
         <div className="bg-white rounded-2xl shadow p-6">
