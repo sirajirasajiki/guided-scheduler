@@ -34,7 +34,8 @@
       "Bash(pnpm run *)",
       "Bash(npm ls *)",
       "Bash(pnpm licenses *)",
-      "Bash(grep -v \"^$\\\\|^┌\\\\|^├\\\\|^└\\\\|^│ Package\\\\|^│ License\\\\|^Preview\\\\|^Output\")"
+      "Bash(grep -v \"^$\\\\|^┌\\\\|^├\\\\|^└\\\\|^│ Package\\\\|^│ License\\\\|^Preview\\\\|^Output\")",
+      "WebFetch(domain:sirajira-sajiki-tech.com)"
     ]
   }
 }

@@ -242,13 +242,14 @@ Drizzle schema を `src/server/db/schema.ts` に定義する。
 ## 開発コマンド (想定)
 
 ```
-pnpm dev          # ローカル開発 (wrangler dev)
-pnpm build        # フロント(Vite)ビルド
-pnpm deploy       # Cloudflare へデプロイ
-pnpm db:generate  # Drizzle マイグレーション生成
-pnpm db:migrate   # D1 へマイグレーション適用 (ローカル)
+pnpm dev              # ローカル開発 (wrangler dev / 開発DB接続)
+pnpm build            # フロント(Vite)ビルド
+pnpm deploy:dev       # 開発 Worker へデプロイ (guided-scheduler-dev / 開発DB)
+pnpm deploy:prod      # 本番 Worker へデプロイ (guided-scheduler / 本番DB)
+pnpm db:generate      # Drizzle マイグレーション生成
+pnpm db:migrate       # D1 へマイグレーション適用 (ローカル)
 pnpm db:migrate:prod  # D1 へマイグレーション適用 (本番)
-pnpm typecheck    # TypeScript 型チェック
+pnpm typecheck        # TypeScript 型チェック
 ```
 
 ---
@@ -277,6 +278,15 @@ Day 14 の振り返り時に自己採点する。
 - **発注品質**  : Claude Code への指示で手戻りが発生した回数
 - **再現性**    : 同じ手順を別プロジェクトで使えそうか (5段階)
 - **コード規模**: 総行数・ファイル数 (目安: 初回 1000 行以下、最終 1500 行以下)
+
+---
+
+## DB操作のルール
+
+- ローカル開発・動作確認は必ず `--local` フラグを使うこと
+- `--remote` フラグは原則使用禁止
+- 本番DBへの直接操作は行わないこと
+- マイグレーション適用が必要な場合は人間に確認を取ること
 
 ---
 

@@ -44,7 +44,13 @@ pnpm build
 # ビルド後の動作確認（wrangler dev）
 pnpm preview
 
-# Cloudflare Workers へデプロイ
+# 本番 Worker へデプロイ（本番DB guided-scheduler に接続）
+pnpm deploy:prod
+
+# 開発 Worker へデプロイ（開発DB guided-scheduler-dev に接続）
+pnpm deploy:dev
+
+# Cloudflare Workers へデプロイ（非推奨: deploy:dev / deploy:prod を使うこと）
 pnpm deploy
 
 # マイグレーションファイル生成（schema.ts 変更後に実行）

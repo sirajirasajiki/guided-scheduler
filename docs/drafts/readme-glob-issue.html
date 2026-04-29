@@ -1,0 +1,198 @@
+<!--
+---
+title: "Claude Codeに丸投げしてみた – 本番DB/開発DB分離編"
+slug: "claude-code-db-separation"
+status: "draft"
+source_dates:
+  - "2026-04-29"
+tags:
+  - "Claude Code"
+  - "Cloudflare Workers"
+  - "Cloudflare D1"
+  - "Wrangler"
+  - "個人開発"
+  - "環境分離"
+  - "完全委任開発"
+seo_title: "Claude Codeに丸投げしてみた – 本番DB/開発DB分離編【Cloudflare Workers + D1】"
+keywords: "Claude Code, Cloudflare Workers, Cloudflare D1, Wrangler, 環境分離, 本番DB, 開発DB, 完全委任, 個人開発, wrangler.toml"
+meta:
+  description_candidates:
+    - "Claude Code完全委任で作った幹事ツールに本番DB/開発DBの分離を追加した手順を解説。wrangler.tomlのenv分離・Worker分離・コマンド設計まで、影響範囲を把握せずに指示を出したら3回の手戻りが発生した実体験をまとめました。"
+    - "Cloudflare Workers + D1で本番DBと開発DBを分離した話。DBだけ分けてもWorkerが同じでは意味がないことに後から気づき、計3回の追加修正が発生。Claude Code完全委任でも設計の影響範囲は人間が先に整理する必要があると実感した記録です。"
+    - "Claude Codeへの指示でDB分離をやったら3回手戻りした話。wrangler.tomlのenv設定・Worker名の分離・--env フラグの明示化まで、影響範囲の把握不足が連鎖的な修正を生んだ実例と、Cloudflare Workersでの環境分離の正しい設計方法を解説します。"
+---
+-->
+
+<p>こんにちは、白々さじきです。</p>
+
+<p>飲み会の日程調整ツールをCloudflare Workers + Hono + D1で作るこの検証プロジェクトも、少しずつ形になってきました。今回は「本番DBと開発DBの分離」という地味だけど大事なインフラ整備をClaude Codeに丸投げした話です。</p>
+
+<h2>なぜDB分離が必要だったか</h2>
+
+<p>最初の実装フェーズでは、本番DBと開発DBをまったく分けていませんでした。<code>wrangler dev</code>でローカル開発するときも、デプロイするときも、すべて同じD1データベース（<code>guided-scheduler</code>）に接続していました。</p>
+
+<p>これが問題になる理由は2つあります。</p>
+
+<h3>理由1：Claude Codeが本番データに誤って触れるリスク</h3>
+
+<p>Claude Codeはマイグレーションの適用や動作確認のために<code>wrangler d1</code>コマンドを叩くことがあります。もし<code>--remote</code>フラグ付きのコマンドを実行されると、本番D1に直接アクセスしてしまいます。テスト用のレコードが混入したり、最悪の場合データが消えたりするリスクがあります。</p>
+
+<h3>理由2：今後追加予定のGitHub Actionsとの兼ね合い</h3>
+
+<p>古いイベントを自動で削除する月次クリーンアップのGitHub Actionsを追加する予定があります。このActions経由のDB操作も本番DBを対象にする予定なので、開発中に誤爆しないよう、事前に分離しておく必要がありました。</p>
+
+<p><strong>教訓：AIに触らせる前に「触らせてはいけない場所」を環境レベルで分離しておく。コードやCLAUDE.mdの注意書きだけでは不十分で、物理的に触れない構成にするのが確実。</strong></p>
+
+<h2>どんな構成にしたか</h2>
+
+<p>wrangler.tomlの<code>env</code>機能を使って、2つの名前付き環境を定義しました。</p>
+
+<pre><code># 開発環境
+[env.dev]
+name = "guided-scheduler-dev"
+[[env.dev.d1_databases]]
+binding = "DB"
+database_name = "guided-scheduler-dev"
+database_id = "ここにID"
+
+# 本番環境
+[env.production]
+name = "guided-scheduler"
+[[env.production.d1_databases]]
+binding = "DB"
+database_name = "guided-scheduler"
+database_id = "ここにID"</code></pre>
+
+<p>コマンドもこう分けました。</p>
+
+<table>
+  <thead>
+    <tr><th>コマンド</th><th>接続DB</th><th>デプロイ先Worker</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><code>pnpm dev</code></td><td>guided-scheduler-dev</td><td>ローカル</td></tr>
+    <tr><td><code>pnpm deploy:dev</code></td><td>guided-scheduler-dev</td><td>guided-scheduler-dev.sirajira.workers.dev</td></tr>
+    <tr><td><code>pnpm deploy:prod</code></td><td>guided-scheduler</td><td>guided-scheduler.sirajira.workers.dev</td></tr>
+  </tbody>
+</table>
+
+<p>ここで一つ気づいたのが、<strong>Workerも分離しないと意味がない</strong>ということです。最初の設計案では、DBだけ分けてWorkerは同じ（<code>guided-scheduler</code>）にしようとしていました。しかしそれだと、<code>pnpm deploy</code>（開発用）を実行しても本番Workerが上書きされてしまいます。envごとに<code>name</code>を明示してWorkerも別名にすることで、デプロイ先の誤爆を防ぎました。</p>
+
+<p><strong>教訓：DBを分けるだけでなく、Workerも分けないとデプロイ時の誤爆リスクが残る。<code>[env.xxx]</code>に<code>name</code>を必ず明示すること。</strong></p>
+
+<h2>Claude Codeへの指示内容</h2>
+
+<p>今回の指示はStep形式でまとめて一括で渡しました。実際に渡したプロンプトはこちらです。</p>
+
+<pre><code>## 目的
+本番DBと開発DBを分離し、Claude Codeや開発作業が
+本番データに誤って触れないようにする。
+
+## Step 1: 開発用D1データベースを新規作成
+以下のコマンドで開発用DBを作成し、database_idを控える:
+npx wrangler d1 create guided-scheduler-dev
+
+## Step 2: wrangler.tomlを修正
+現在の設定を「本番用」として残しつつ、
+開発用の設定をデフォルトに変更する。
+
+【変更後のwrangler.toml構成】
+# デフォルト = 開発用DB
+[[d1_databases]]
+binding = "DB"
+database_name = "guided-scheduler-dev"
+database_id = "&lt;Step1で作成したID&gt;"
+
+# 本番環境
+[env.production]
+[[env.production.d1_databases]]
+binding = "DB"
+database_name = "guided-scheduler"
+database_id = "&lt;既存の本番DBのID&gt;"
+
+## Step 3: 開発用DBにマイグレーションを適用
+npx wrangler d1 migrations apply guided-scheduler-dev --remote
+
+## Step 4: 本番デプロイコマンドをREADMEに追記
+## Step 5: CLAUDE.mdにDB操作ルールを追記
+
+## 禁止事項
+- 既存の本番DBのデータ削除・変更
+- wrangler.tomlとCLAUDE.mdとREADME以外のファイルの変更</code></pre>
+
+<p>指示文書には「禁止事項」として「既存の本番DBのデータ削除・変更」と「変更してよいファイルの明示（wrangler.toml / CLAUDE.md / README.mdのみ）」を記載しました。Claudeが余計なファイルに手を出さないよう、スコープを絞るのが大事です。</p>
+
+<p>Step 3の<code>--remote</code>フラグについて、実行前に私が「意味を教えて」と確認したところ、Claudeが丁寧に解説してくれました。完全委任でも、コマンドの意味を人間が把握しておく習慣は手放してはいけないと感じます。</p>
+
+<p><strong>教訓：指示文書には「やること」だけでなく「やってはいけないこと」と「触ってよいファイル」を明記する。スコープを絞ることでClaudeの予期しない変更リスクが下がる。</strong></p>
+
+<h2>実際にやらせてみてどうだったか</h2>
+
+<p>Step 1〜5は概ねスムーズに動きました。実際に実行したコマンドはこの2本です。</p>
+
+<pre><code># 開発用DB作成
+npx wrangler d1 create guided-scheduler-dev
+
+# 開発用DBにマイグレーション適用
+npx wrangler d1 migrations apply guided-scheduler-dev --remote</code></pre>
+
+<p><code>wrangler d1 create</code>でDBを作成し、tomlを書き換え、5件のマイグレーションを一括適用するところまで、大きなつまずきはありませんでした。</p>
+
+<p>一点具体的に書けることがあります。<code>pnpm deploy:dev</code>を実行したところ、以下のワーニングが出ました。</p>
+
+<pre><code>[WARNING] Multiple environments are defined in the Wrangler configuration file,
+but no target environment was specified for the deploy command.</code></pre>
+
+<p>複数のenvが定義されているのに<code>--env</code>を指定していないため出た警告です。動作自体は問題ありませんでしたが、「気持ち悪い」ということで明示化することになりました。デフォルトの<code>[[d1_databases]]</code>を廃止して<code>[env.dev]</code>に昇格させ、すべてのコマンドに<code>--env dev</code>または<code>--env production</code>を明示するよう修正しました。Claudeはこの追加修正にも対応してくれましたが、最初の設計時にこのワーニングを予見できなかったのは反省点です。</p>
+
+<!-- TODO: 実際に使ってみての追加の詰まり・感触を追記 -->
+
+<p><strong>教訓：ワーニングは必ず潰す。「動いているから無視」は後の混乱の種になる。Wranglerのenv分離では<code>--env</code>の明示が必須。</strong></p>
+
+<p>修正後、両DBに正しくテーブルが作られているかを以下のコマンドで確認しました。</p>
+
+<pre><code># Dev DBのテーブル確認
+npx wrangler d1 execute guided-scheduler-dev --remote \
+  --command "SELECT name FROM sqlite_schema WHERE type='table';"
+
+# Prod DBのテーブル確認
+npx wrangler d1 execute guided-scheduler --remote \
+  --command "SELECT name FROM sqlite_schema WHERE type='table';"</code></pre>
+
+<!-- TODO: 両DBの出力結果のスクショを追加 -->
+
+<p>ただし、ここで終わりではありませんでした。<code>pnpm deploy:dev</code>を実行した後、「deploy先って開発環境と本番環境で同じ？」という疑問が出てきました。</p>
+
+<p>確認してみると、最初の指示では<strong>DBは分離できていたものの、Workerは同一</strong>のままになっていました。つまり<code>pnpm deploy</code>（開発用）を実行しても、本番Worker（<code>guided-scheduler</code>）が上書きされる状態が残っていました。</p>
+
+<p>これを受けて追加で以下の修正を指示しました。</p>
+
+<ol>
+  <li><code>[env.production]</code>に<code>name = "guided-scheduler"</code>を追加してWorkerを明示分離</li>
+  <li>デフォルトの<code>name</code>を<code>guided-scheduler-dev</code>に変更</li>
+  <li><code>package.json</code>に<code>deploy:dev</code> / <code>deploy:prod</code>スクリプトを追加</li>
+</ol>
+
+<p>さらにWARNING対応で<code>[env.dev]</code>の明示化と<code>--env dev</code>フラグの付与まで、計3回の追加修正が発生しました。</p>
+
+<p>初回の指示にWorker分離とコマンド設計まで含めておけば、1回のやり取りで完結できた部分です。「DBを分けたい」という要件だけを渡すと、Claudeは言われた通りDBだけを分けます。その先にある「Workerも分離しないと意味がない」「コマンドも整備しないと人間が迷う」という設計判断は、人間が先に考えて指示に含める必要がありました。</p>
+
+<p>改めて感じたのは、<strong>環境を追加・分離するときは影響範囲を事前に洗い出す習慣が必要だ</strong>ということです。「DBを分ける」という一点だけを見ると変更箇所は少なく見えますが、実際にはDB定義・Worker名・デプロイコマンド・スクリプト・ドキュメントと、連鎖的に変更が必要な箇所が広がります。この影響範囲を人間が先に把握してから指示を出さないと、Claudeに何度も追加修正を依頼することになります。今回がまさにその典型でした。</p>
+
+<h2>学びと全体の感想</h2>
+
+<p>今回一番感じたのは、<strong>環境を分離するときは「何が変わるか」を先に全部洗い出す必要がある</strong>ということです。</p>
+
+<p>「DBを分けたい」という要件自体はClaudeへの一言指示でも実行できます。ただ今回実際にやってみると、DB定義だけでなくWorker名・デプロイコマンド・スクリプト・ドキュメントと、連鎖的に変更が必要な箇所が広がりました。その影響範囲を把握しないまま指示を出したことで、計3回の追加修正が発生しました。</p>
+
+<p>Claudeは指示されたことを正確にやりますが、「DBを分けるならWorkerも分けないと意味がない」という一段深い設計判断は自分からは言ってくれません。人間が影響範囲を先に整理してから指示を出す、という順序が大事だと改めて感じました。</p>
+
+<p>エンジニアの現場でも、「環境分離は後でやる」「まず動くものを」という判断が積み重なって、本番事故につながるケースは多いと思います。Claude Code完全委任でも同じで、コードを書く前に影響範囲を人間がきちんと整理することの重要性を実感しました。完全委任の「完全」は、考えることまで委任するという意味ではないと、改めて実感しています。</p>
+
+<h2>次にやること</h2>
+
+<ul>
+  <li>GitHub Actionsによる月次クリーンアップ実装（開発DB・本番DBそれぞれに対応）</li>
+  <li><code>pnpm db:migrate</code>系コマンドも<code>guided-scheduler-dev</code>対応に更新</li>
+  <!-- TODO: Day 10の機能追加②の内容が決まったら追記 -->
+</ul>

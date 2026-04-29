@@ -5,9 +5,11 @@
   "type": "module",
   "license": "MIT",
   "scripts": {
-    "dev": "wrangler dev",
+    "dev": "wrangler dev --env dev",
     "build": "vite build",
     "deploy": "vite build && wrangler deploy",
+    "deploy:dev": "vite build && wrangler deploy --env dev",
+    "deploy:prod": "vite build && wrangler deploy --env production",
     "preview": "vite build && wrangler dev",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "wrangler d1 migrations apply guided-scheduler --local",
