@@ -1,0 +1,96 @@
+<!--
+---
+title: "Claude Codeに丸投げ中にREADMEが見つからないと言われた話"
+slug: "claude-code-readme-glob-issue"
+status: "draft"
+source_dates:
+  - "2026-04-29"
+tags:
+  - "Claude Code"
+  - "個人開発"
+  - "完全委任開発"
+  - "トラブルシュート"
+seo_title: "Claude Codeに丸投げ中にREADMEが見つからないと言われた話【Glob検索の落とし穴】"
+keywords: "Claude Code, Glob, node_modules, README, 完全委任, 個人開発, トラブルシュート"
+meta:
+  description_candidates:
+    - "Claude CodeにREADMEを読ませようとしたら、Glob検索がnode_modules内のREADMEを大量に拾ってしまい、プロジェクトルートのファイルが見つからなかった話。原因と解決策、完全委任開発での気づきをまとめました。"
+    - "Claude Code完全委任中にGlobツールがnode_modulesのREADMEを大量ヒットしてプロジェクトのREADMEを見失った話。パス指定なしのGlobの挙動と、直接パス指定で即解決した実例を紹介します。"
+    - "Claude CodeのGlobツールをパス指定なしで使うとnode_modulesを含む全体を検索する。完全委任でも「ツールの動作の仕組み」をざっくり知っておくと謎挙動に詰まらない、という実体験の記録です。"
+---
+-->
+
+<p>こんにちは、白々さじきです。</p>
+
+<p>
+  本番DB/開発DB分離の作業をClaude
+  Codeに渡す前に、READMEを確認させようとしたときの話です。小さなつまずきでしたが、「完全委任でもツールの動作をある程度知っておくと詰まらない」という気づきがあったので書き残しておきます。
+</p>
+
+<h2>何をやろうとしていたか</h2>
+
+<p>
+  本番DBと開発DBを分離する作業をClaude
+  Codeに渡す前に、プロジェクトのREADMEを参照させてから進めようとしていました。「READMEある？」と聞いたのが始まりです。
+</p>
+
+<p>
+  <strong
+    >教訓：大きな作業を渡す前にREADMEを確認させるのは良い習慣。ただし確認できているかどうかを人間側も把握しておく必要がある。</strong
+  >
+</p>
+
+<h2>何が起きたか</h2>
+
+<p>
+  Claude
+  CodeがGlobツールで<code>README*</code>パターンを使って検索しました。返ってきた結果がこちらです。
+</p>
+
+<pre><code>node_modules\.pnpm\eslint-plugin-react-refresh@...\README.md
+node_modules\.pnpm\@types+react-dom@...\README.md
+node_modules\.pnpm\@types+react@...\README.md
+node_modules\.pnpm\vite@...\README.md
+...（以下100件以上続く）</code></pre>
+
+<p>
+  プロジェクトルートの<code>README.md</code>はどこにも見当たらず、<code>node_modules</code>配下の各パッケージのREADMEで結果が埋め尽くされていました。
+</p>
+
+<p>
+  <strong
+    >教訓：GlobツールはパスをREADME*のように指定するだけでは、node_modulesを含むディレクトリ全体を検索する。結果が多すぎてルートのファイルが埋もれる。</strong
+  >
+</p>
+
+<h2>原因</h2>
+
+<p>
+  Globで<code>README*</code>パターンをパス指定なしで実行したため、<code>node_modules</code>を含むプロジェクト全体が検索対象になっていました。このプロジェクトはpnpmを使っているため<code>node_modules</code>内のパッケージ数が多く、結果が100件以上ヒットしてルートの<code>README.md</code>が事実上見えない状態になっていました。
+</p>
+
+<h2>解決策</h2>
+
+<p>フルパスを直接指定して読み込むよう伝えたら即解決しました。</p>
+
+<pre><code>C:\Users\pc_name\Project\guided-scheduler\README.md</code></pre>
+
+<p>
+  Readツールで絶対パスを直接渡すと、Globを使わずにファイルを読み込むため、node_modulesの件数に関係なく正常に取得できました。
+</p>
+
+<p>
+  <strong
+    >教訓：特定のファイルを読ませたいときはGlobではなく絶対パス直接指定が確実。Globはパターンマッチが必要なときに使い、既知のパスには使わない。</strong
+  >
+</p>
+
+<h2>学び</h2>
+
+<p>
+  完全委任中でも「ツールの動作の仕組み」をざっくり知っておくと、謎挙動が起きたときに原因をすぐ特定できます。今回はGlobがnode_modulesを拾う仕様を把握していたので、「パス指定の問題だな」とすぐわかり、解決策も即答できました。
+</p>
+
+<p>
+  SIerの現場でも、ツールやフレームワークをブラックボックスとして使っていると、予期しない挙動に詰まったときの原因特定に時間がかかります。完全委任するにしても、使っているツールの基本的な動作は把握しておくべきだと改めて感じました。
+</p>
