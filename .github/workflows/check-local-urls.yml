@@ -23,6 +23,7 @@ jobs:
           fi
 
       - name: Check for debugger statements
+        if: always()
         run: |
           if grep -rn "debugger" src/; then
             echo "ERROR: debugger 文が src/ 内に残存しています。コミット前に削除してください。"
