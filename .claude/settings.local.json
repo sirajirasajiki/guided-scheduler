@@ -37,7 +37,9 @@
       "Bash(grep -v \"^$\\\\|^┌\\\\|^├\\\\|^└\\\\|^│ Package\\\\|^│ License\\\\|^Preview\\\\|^Output\")",
       "WebFetch(domain:sirajira-sajiki-tech.com)",
       "Bash(gh issue *)",
-      "WebFetch(domain:github.com)"
+      "WebFetch(domain:github.com)",
+      "Bash(Get-ChildItem -Recurse -Force)",
+      "Bash(Select-Object FullName)"
     ]
   }
 }

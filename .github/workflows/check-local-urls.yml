@@ -1,0 +1,30 @@
+name: Lint - Check for debug artifacts in src/
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  check-debug-artifacts:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check for local URLs (localhost / 127.0.0.1)
+        run: |
+          if grep -rEn "127\.0\.0\.1|localhost" src/; then
+            echo "ERROR: ローカルURLが src/ 内に残存しています。コミット前に修正してください。"
+            exit 1
+          else
+            echo "OK: ローカルURLは見つかりませんでした。"
+          fi
+
+      - name: Check for debugger statements
+        run: |
+          if grep -rn "debugger" src/; then
+            echo "ERROR: debugger 文が src/ 内に残存しています。コミット前に削除してください。"
+            exit 1
+          else
+            echo "OK: debugger 文は見つかりませんでした。"
+          fi
