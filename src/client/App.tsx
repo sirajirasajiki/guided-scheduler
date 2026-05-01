@@ -25,4 +25,5 @@ function App() {
   );
 }
 
+// テスト用: http://localhost:3000/api
 export default App;
