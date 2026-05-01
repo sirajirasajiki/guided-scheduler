@@ -39,7 +39,7 @@ https://github.com/sirajirasajiki/guided-scheduler/issues/3
 
 Claude Code には「Plan モード」があり、このモードではファイルの変更を一切行わず、計画を作ることだけに専念します。GitHub の Issue URL をそのまま渡すと Issue を読んで計画を立ててくれます。
 
-出来上がった計画書: [docs/plan-issue-3-check-local-urls.md](../../docs/plan-issue-3-check-local-urls.md)
+出来上がった計画書: [docs/plan-issue-3-check-local-urls.md](https://github.com/sirajirasajiki/guided-scheduler/blob/main/docs/plan-issue-3-check-local-urls.md)
 
 計画書を確認しながら対話する段階で、後述する追加項目の議論が生まれました。**実装後に気づいて直すより、計画段階で気づく方がコストが低い。** Plan モードを使う習慣は、このプロジェクトを通じて身についた「Claude Code との付き合い方」のひとつです。
 
