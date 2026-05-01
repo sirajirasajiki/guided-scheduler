@@ -1,0 +1,390 @@
+<!--
+---
+title: "Claude Codeに丸投げしてみた – GitHub Actions月次クリーンアップ編"
+slug: "claude-code-github-actions-cleanup"
+status: "draft"
+source_dates:
+  - "2026-05-01"
+tags:
+  - "Claude Code"
+  - "GitHub Actions"
+  - "Cloudflare D1"
+  - "Wrangler"
+  - "個人開発"
+  - "完全委任開発"
+seo_title: "Claude Codeに丸投げしてみた – GitHub Actions月次クリーンアップ編【Cloudflare D1】"
+keywords: "Claude Code, GitHub Actions, Cloudflare D1, Wrangler, 月次クリーンアップ, cron, workflow_dispatch, 完全委任, 個人開発"
+meta:
+  description_candidates:
+    - "Claude Code完全委任で月次データクリーンアップのGitHub Actionsを実装。Cloudflare APIトークンの権限設定・Account IDの取得場所・Windowsでのwrangler --localクラッシュなど、外部サービス連携で詰まったポイントを実体験でまとめました。"
+    - "GitHub ActionsでCloudflare D1を操作する月次クリーンアップを実装した話。APIトークンの権限不足・Account IDの取得場所の勘違い・Node.js 24移行など、コード以外の設定周りで詰まった3つのポイントを解説します。"
+---
+-->
+
+<p>こんにちは、白々さじきです。</p>
+
+<p>
+  飲み会の日程調整ツールをCloudflare Workers + Hono +
+  D1で作るこの検証プロジェクト。今回はDB分離に続く運用インフラ整備として「古いイベントを毎月自動削除するGitHub
+  Actions」をClaude Codeに丸投げした話です。
+</p>
+
+<p>
+  今回はもう一つ検証したいことがありました。<strong>GitHubイシューをそのままプロンプトとして渡せるか</strong>という点です。
+</p>
+
+<h2>GitHubイシューをプロンプトとして渡してみた</h2>
+
+<p>
+  これまでの実装では、やりたいことをテキストで直接Claude
+  Codeに渡していました。今回は「GitHubイシューのURLを渡すだけで実装してもらえるか」を試してみました。
+</p>
+
+<p>実際に渡したプロンプトはこれだけです。</p>
+
+<pre><code>下記のIssueを実行してください。
+https://github.com/sirajirasajiki/guided-scheduler/issues/2</code></pre>
+
+<p>イシューの中身はこうです。</p>
+
+<pre><code>タイトル: GitHub Actionsで月次データクリーンアップを実装する
+
+- 候補日の最大日から30日以上経過したイベントを毎月1日3時(JST)に自動削除する
+- 対象は本番DB（guided-scheduler, --env production）のみ
+- workflow_dispatch で手動実行も可能にする
+- 削除件数をログに出力する
+
+完了条件:
+- .github/workflows/cleanup-old-events.yml が作成されている
+- cronスケジュール: 毎月1日 2:00 JST
+- 子テーブルのレコードを先に削除する（外部キー制約を考慮）
+- GitHub Secrets: CLOUDFLARE_API_TOKEN / CLOUDFLARE_ACCOUNT_ID を設定する</code></pre>
+
+<p>
+  結果として、Claude
+  CodeはイシューのURLからページを取得し、要件を読み取ったうえで実装まで完了しました。<code
+    >.github/workflows/cleanup-old-events.yml</code
+  >
+  の作成、SQL設計、外部キー制約を考慮した削除順序の決定、すべてイシューの内容から判断しています。
+</p>
+
+<p>
+  <strong>「GitHubイシューをそのまま渡す」は普通に機能する。</strong>
+  要件が整理されていれば、URL1行で実装まで完結します。逆に言うと、イシューの書き方が実装品質に直結します。今回のイシューには完了条件まで明記していたので、手戻りなく一発で実装が完了しました。
+</p>
+
+<p>
+  <strong
+    >教訓：Claude
+    Codeへの指示はテキストでなくてもよい。整理されたGitHubイシューのURLを渡すだけで実装できる。発注スキルの本質は「何を書くか」であって「どこに書くか」ではない。</strong
+  >
+</p>
+
+<h2>なぜ月次クリーンアップが必要か</h2>
+
+<p>
+  このツールには認証機能がありません。URLを知っている人なら誰でもイベントを作れます。放置すると古いデータが積み上がり続けるため、「候補日の最終日から30日以上経過したイベントを毎月1日に自動削除する」仕組みが欲しくなりました。
+</p>
+
+<p>
+  手動で定期的に削除するのは運用として続かないので、GitHub
+  Actionsのcronを使って自動化することにしました。
+</p>
+
+<h2>作ったもの</h2>
+
+<p>
+  <code>.github/workflows/cleanup-old-events.yml</code>
+  を作成し、以下を実現しました。
+</p>
+
+<ul>
+  <li>毎月1日 18:00 UTC（≒ 2日 3:00 JST）に自動実行</li>
+  <li><code>workflow_dispatch</code> で手動実行も可能</li>
+  <li><code>dry_run: true</code> オプションで削除せず対象件数だけ確認できる</li>
+  <li>
+    削除順序は <code>participants</code> →
+    <code>events</code>（外部キー制約を考慮）
+  </li>
+</ul>
+
+<p>
+  削除対象の判定はSQLiteの <code>json_each</code> を使って
+  <code>candidate_dates</code>（JSON配列）の最大値を取り出しています。
+</p>
+
+<pre><code>SELECT e.id FROM events e, json_each(e.candidate_dates) AS dates
+GROUP BY e.id
+HAVING MAX(dates.value) &lt; date('now', '-30 days')</code></pre>
+
+<p>
+  DBへのアクセスは
+  <code>wrangler d1 execute guided-scheduler --remote</code> 経由です。GitHub
+  ActionsのランナーからCloudflare D1に直接SQLを投げる構成になっています。
+</p>
+
+<h2>dry_runオプションの設計</h2>
+
+<p>
+  「本番DBに対して動かす前に確認したい」という需要は確実にあります。そこでワークフローに
+  <code>dry_run</code> 入力を追加しました。
+</p>
+
+<pre><code>workflow_dispatch:
+  inputs:
+    dry_run:
+      description: 'dry_run: true にすると削除せず対象件数の確認のみ行う'
+      type: choice
+      options:
+        - 'false'
+        - 'true'</code></pre>
+
+<p>
+  <code>dry_run: true</code> のときは「Count deletion
+  targets」ステップで対象イベントの一覧を出力し、削除ステップをスキップします。本番実行前にまずこれで確認する運用にしています。
+</p>
+
+<!-- ここに写真：GitHub ActionsのRun workflowボタン、dry_run選択画面 -->
+
+<h2>GitHub Secretsの設定</h2>
+
+<p>ワークフローからCloudflareにアクセスするために2つのSecretが必要です。</p>
+
+<ul>
+  <li><code>CLOUDFLARE_API_TOKEN</code>：Cloudflare APIトークン</li>
+  <li><code>CLOUDFLARE_ACCOUNT_ID</code>：CloudflareのアカウントID</li>
+</ul>
+
+<p>
+  設定場所：GitHub リポジトリ → Settings → Secrets and variables → Actions →
+  <strong>Secretsタブ</strong> → New repository secret
+</p>
+
+<!-- ここに写真：GitHub Secrets設定画面 -->
+
+<table>
+  <thead>
+    <tr>
+      <th></th>
+      <th>Secrets</th>
+      <th>Variables</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>ログへの表示</td>
+      <td><code>***</code> でマスクされる</td>
+      <td>そのまま表示される</td>
+    </tr>
+    <tr>
+      <td>設定後の値</td>
+      <td>読み返し不可</td>
+      <td>読み返し可能</td>
+    </tr>
+    <tr>
+      <td>用途</td>
+      <td>APIトークン等の機密情報</td>
+      <td>環境名、フラグ等</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>APIトークンは機密情報なのでSecrets一択です。</p>
+
+<h2>Cloudflare APIトークンの作成</h2>
+
+<p>Cloudflare ダッシュボード → My Profile → API Tokens → Create Token</p>
+
+<p>テンプレートは使わず <strong>Create Custom Token</strong> を選びます。</p>
+
+<!-- ここに写真：Cloudflare API Token作成画面（テンプレート一覧） -->
+
+<p>必要な権限は以下の2つです。</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>スコープ</th>
+      <th>リソース</th>
+      <th>権限</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Account</td>
+      <td>D1</td>
+      <td>Edit</td>
+    </tr>
+    <tr>
+      <td>User</td>
+      <td>User Details</td>
+      <td>Read</td>
+    </tr>
+  </tbody>
+</table>
+
+<!-- ここに写真：Custom Token権限設定画面 -->
+
+<p>Account Resources は「自分のアカウントのみ」に絞るとより安全です。</p>
+
+<h2>つまずいたこと3連発</h2>
+
+<h3>① APIトークンの権限が足りなかった</h3>
+
+<p>
+  最初は
+  <code>Account &gt; D1 &gt; Edit</code>
+  だけ設定して実行したところ、こんなエラーが出ました。
+</p>
+
+<pre><code>Authentication error [code: 10000]
+Getting User settings...
+Unable to retrieve email for this user.
+Are you missing the `User-&gt;User Details-&gt;Read` permission?</code></pre>
+
+<p>
+  <code>User &gt; User Details &gt; Read</code>
+  が不足していました。エラーメッセージにそのまま書いてあるのに最初は見落としていました。
+</p>
+
+<p>
+  <strong
+    >教訓：wranglerのエラーメッセージはちゃんと読む。権限不足の場合は不足している権限名まで書いてある。</strong
+  >
+</p>
+
+<h3>② CLOUDFLARE_ACCOUNT_IDに間違った値を入れた</h3>
+
+<p>
+  権限を追加してもまだ同じエラーが出続けました。原因を探ると
+  <code>CLOUDFLARE_ACCOUNT_ID</code> に間違った値が入っていました。
+</p>
+
+<p>
+  トークン作成後に出てきたCurlコマンドを実行しその時に出てきたIDの値がアカウントIDと勘違いしていました。
+</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>値</th>
+      <th>取得場所</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>CLOUDFLARE_API_TOKEN</code></td>
+      <td>My Profile → API Tokens → トークン作成後の画面</td>
+    </tr>
+    <tr>
+      <td><code>CLOUDFLARE_ACCOUNT_ID</code></td>
+      <td>Workers &amp; Pages の右サイドバー</td>
+    </tr>
+  </tbody>
+</table>
+
+<!-- ここに写真：Cloudflare Workers & PagesのAccount ID表示箇所 -->
+
+<p>
+  <strong
+    >教訓：CLOUDFLARE_ACCOUNT_IDはトークン画面ではなくWorkers &amp;
+    Pagesのサイドバーから取得する。画面に複数のIDが出てくるので混乱しやすい。</strong
+  >
+</p>
+
+<h3>③ Node.js 20のDeprecationワーニング</h3>
+
+<p>Actions実行時にこんなワーニングが出ました。</p>
+
+<pre><code>Node.js 20 actions are deprecated.
+actions/checkout@v4, actions/setup-node@v4, pnpm/action-setup@v4 are running on Node.js 20.</code></pre>
+
+<p>
+  ワークフローのenvに
+  <code>FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true</code>
+  を追加し、setup-nodeのバージョンも
+  <code>'24'</code>
+  に変更して対応しました。実行後は以下のワーニングが残りますが、動作への影響はありません。
+</p>
+
+<pre><code>Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24.</code></pre>
+
+<p>
+  「アクションのコード自体は20向けだが、強制的に24で実行している」という情報提供です。各アクションの管理者がNode.js
+  24対応バージョンをリリースするまでは消せません。
+</p>
+
+<p>
+  <strong
+    >教訓：FORCE_JAVASCRIPT_ACTIONS_TO_NODE24で対応できるが、残るワーニングはaction側の対応待ち。動作には問題ない。</strong
+  >
+</p>
+
+<h2>ローカルでのDB確認コマンド</h2>
+
+<p>DB確認用のコマンドも整備しました。</p>
+
+<pre><code>pnpm db:events:dev   # 開発DB のイベント一覧
+pnpm db:events:prod  # 本番DB のイベント一覧</code></pre>
+
+<p>
+  当初
+  <code>--local</code>
+  フラグでローカルSQLiteを直接叩くコマンドを作ったのですが、Windowsではwranglerが内部で起動するworkerdプロセスとlibuv（Node.jsの非同期I/Oライブラリ）が衝突してクラッシュしました。
+</p>
+
+<pre><code>Assertion failed: !(handle->flags &amp; UV_HANDLE_CLOSING), file src\win\async.c, line 76
+ELIFECYCLE Command failed with exit code 3221226505.</code></pre>
+
+<p>
+  開発DBもCloudflareのリモートD1として運用しているため、<code>--remote</code>
+  でリモートに接続する方式に変更しました。
+</p>
+
+<p>
+  <strong
+    >教訓：Windows環境でwrangler d1 execute
+    --localは動かない場合がある。開発DBもリモートD1として持つ構成にすると
+    --remote で統一できて問題が起きない。</strong
+  >
+</p>
+
+<h2>GitHub ActionsのCronは次回実行が見えない</h2>
+
+<p>
+  設定後に「次回いつ動くか確認したい」と思ったのですが、GitHub
+  Actionsには次回実行予定時刻を表示する機能がありません。Cron式から手動で計算するしかないです。
+</p>
+
+<p>
+  今回の <code>0 18 1 * *</code> なら次回は6月1日 18:00 UTC（= 6月2日 3:00
+  JST）です。
+</p>
+
+<p>
+  もう一つ注意点があります。<strong>リポジトリへのpushが60日間ないとcronが自動停止</strong>します。停止するとメール通知が届くので、その場合はActionsタブから手動で有効化し直してください。
+</p>
+
+<h2>学びと全体の感想</h2>
+
+<p>
+  今回は実装自体よりも
+  <strong>Cloudflare側の設定とGitHub Secretsの設定でつまずいた</strong>
+  印象が強いです。コードはClaudeが書いてくれますが、外部サービスの認証・権限周りは人間が理解して設定する必要があります。
+</p>
+
+<p>
+  特に「どの画面のどのIDを使えばいいか」は、慣れていないと迷います。Cloudflareの場合、アカウントID・データベースID・APIトークンIDがそれぞれ別の画面に存在していて、初見では混乱しやすいです。
+</p>
+
+<p>
+  <strong
+    >完全委任で詰まるのはコードではなく、外部サービスとの接続部分が多い。</strong
+  >これはClaudeに丸投げできない領域なので、あらかじめ自分で理解しておく必要があります。
+</p>
+
+<h2>次にやること</h2>
+
+<ul>
+  <li>6月1日の自動実行を確認する</li>
+</ul>
