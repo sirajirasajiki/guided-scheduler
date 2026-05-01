@@ -1,2 +1,0 @@
-# CI動作確認用テストファイル（docs配下なのでCI対象外）
-http://localhost:3000/api
