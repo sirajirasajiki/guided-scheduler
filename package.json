@@ -12,8 +12,10 @@
     "deploy:prod": "vite build && wrangler deploy --env production",
     "preview": "vite build && wrangler dev",
     "db:generate": "drizzle-kit generate",
-    "db:migrate": "wrangler d1 migrations apply guided-scheduler --local",
-    "db:migrate:prod": "wrangler d1 migrations apply guided-scheduler --remote"
+    "db:migrate": "wrangler d1 migrations apply guided-scheduler-dev --remote",
+    "db:migrate:prod": "wrangler d1 migrations apply guided-scheduler --remote",
+    "db:events:dev": "wrangler d1 execute guided-scheduler-dev --remote --command \"SELECT id, name, candidate_dates, confirmed_date, datetime(created_at, 'unixepoch', 'localtime') AS created_at FROM events ORDER BY created_at DESC\"",
+    "db:events:prod": "wrangler d1 execute guided-scheduler --remote --command \"SELECT id, name, candidate_dates, confirmed_date, datetime(created_at, 'unixepoch', 'localtime') AS created_at FROM events ORDER BY created_at DESC\""
   },
   "dependencies": {
     "drizzle-orm": "^0.45.2",
