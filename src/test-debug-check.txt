@@ -1,3 +1,3 @@
 # CI動作確認用テストファイル（確認後に削除）
 http://localhost:3000/api
-debugger
+
