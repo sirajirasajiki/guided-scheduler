@@ -2,6 +2,8 @@ name: Lint - Check for debug artifacts in src/
 
 on:
   push:
+    branches:
+      - main
   pull_request:
 
 jobs:

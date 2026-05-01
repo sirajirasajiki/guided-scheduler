@@ -236,6 +236,15 @@ guided-scheduler/
 
 ---
 
+## GitHub Actions
+
+| ワークフロー | トリガー | 内容 |
+| --- | --- | --- |
+| `check-local-urls.yml` | push (main) / pull_request | `src/` 内の `localhost`・`127.0.0.1`・`debugger` 文の残存を検出。見つかった場合はビルド失敗 |
+| `cleanup-old-events.yml` | 毎月1日 / 手動 | 候補日の最大日から30日以上経過したイベントと参加者データを本番DBから削除 |
+
+---
+
 ## 既知の制約・スコープ外
 
 ### 現時点の既知制約
@@ -249,7 +258,7 @@ guided-scheduler/
 - メール・LINE などの通知機能
 - 参加者の削除機能（回答の上書きは可）
 - テストコード
-- 自動デプロイ（GitHub Actions 等）
+- 自動デプロイ（GitHub Actions によるデプロイ自動化）
 - パフォーマンス最適化・PWA 化
 
 ## ライセンス
