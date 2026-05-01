@@ -197,6 +197,11 @@ Drizzle schema を `src/server/db/schema.ts` に定義する。
 
 ## 実装上の重要ルール
 
+### ローカルURL・デバッグコードの禁止
+- `src/` 配下のファイルでは、コメント内も含め `localhost` / `127.0.0.1` を記述しないこと
+- `src/` 配下のファイルに `debugger` 文を残さないこと
+- CI (GitHub Actions) で自動検出され、ビルドが失敗する
+
 ### Workers Runtime 制約
 - Node.js 固有 API (`fs`, `path`, `process`, `net` 等) は使用禁止
 - 使用するライブラリは Workers Runtime 互換のものに限る
