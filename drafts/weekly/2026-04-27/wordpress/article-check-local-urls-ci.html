@@ -1,0 +1,206 @@
+<!--
+---
+title: "うっかりlocalhostをコミットしないためのCI自動チェックをClaude Codeに作らせた話"
+slug: "ci-check-local-urls-with-claude-code"
+status: "draft"
+source_dates:
+  - "2026-05-02"
+tags:
+  - "Claude Code"
+  - "GitHub Actions"
+  - "CI/CD"
+  - "個人開発"
+  - "完全委任開発"
+seo_title: "うっかりlocalhostをコミットしないためのCI自動チェックをClaude Codeに作らせた話【GitHub Actions + grep】"
+keywords: "Claude Code, GitHub Actions, CI, localhost, debugger, grep, 自動チェック, AI駆動開発, 個人開発, 完全委任"
+meta:
+  description_candidates:
+    - "terms.tsxにlocalhostが混入した事故をきっかけにGitHub ActionsでCI自動チェックを導入した話。grep するだけの簡単な実装のはずが、YAML順序の手戻り・debugger追加・if: always()の発見など計4回の変更が発生。Claude Codeとの対話で仕様が育っていく実体験をまとめました。"
+    - "Claude Codeに丸投げしてCI整備をしたら、簡単なはずのgrep実装で4回変更が発生した話。「他に入れるものない？」の一言でdebuggerチェックが追加され、動作確認中にif: always()の必要性に気づく。計画・実装・確認のサイクルを小さく回すことの大事さを実感した記録です。"
+    - "GitHub ActionsでlocalホストURLとdebugger文の残存を自動検出するCIを実装。Plan モードで事前合意→対話で仕様追加→動作確認で不具合発見という流れを通じて、Claude Code完全委任でも「動かして初めて見える問題がある」という学びをまとめました。"
+---
+-->
+
+<p>こんにちは、白々さじきです。</p>
+
+<p>「grep するだけだから簡単でしょ」と思っていた CI 整備。やってみると、実装後の動作確認で気づくことが次々と出てきました。今回はその一部始終を書きます。</p>
+
+<h2>きっかけ：terms.tsx に localhost が残っていた</h2>
+
+<p>幹事ツール（飲み会日程調整 Web アプリ）を開発している中で、利用規約ページ（<code>terms.tsx</code>）に <code>localhost</code> の URL が混入していることに気づきました。</p>
+
+<p>開発中にローカル動作確認用のリンクを書いて、そのままコミットしてしまったのです。本番で普通に表示されていたので、気づくのが遅れました。</p>
+
+<p><strong>これを二度と起こさないために、CI で自動検出する仕組みを入れることにしました。</strong></p>
+
+<h2>実装前に：Plan モードで合意を取る</h2>
+
+<p>実装を指示する前に、まず<strong>プランを作らせて内容を確認してから承認する</strong>手順を踏みました。使ったプロンプトはこれだけです。</p>
+
+<pre><code>このIssueを実行するための計画を立ててください。
+https://github.com/sirajirasajiki/guided-scheduler/issues/3
+計画は、docs/に作成してください。</code></pre>
+
+<p>Claude Code には「Plan モード」があり、このモードではファイルの変更を一切行わず、計画を作ることだけに専念します。GitHub の Issue URL をそのまま渡すと Issue を読んで計画を立ててくれます。</p>
+
+<p>計画書を確認しながら対話する段階で、後述する追加項目の議論が生まれました。<strong>実装後に気づいて直すより、計画段階で気づく方がコストが低い。</strong> Plan モードを使う習慣は、このプロジェクトを通じて身についた「Claude Code との付き合い方」のひとつです。</p>
+
+<h2>一発完成ではなかった：対話と確認で積み上がった変更</h2>
+
+<p>方針はシンプルです。<code>src/</code> 配下を grep して <code>localhost</code> が含まれていたらビルドを失敗させる。それだけのはずでした。ここから完成まで、計4回の変更がありました。</p>
+
+<h3>変更①：YAML のキー順序を既存ファイルに合わせた</h3>
+
+<p>最初に Claude Code が出してきたステップはこうでした。</p>
+
+<pre><code>- uses: actions/checkout@v4
+  name: Checkout</code></pre>
+
+<p>既存の <code>cleanup-old-events.yml</code> と並べると順番が逆です。</p>
+
+<pre><code>- name: Checkout   ← 既存ファイルはこちら
+  uses: actions/checkout@v4</code></pre>
+
+<p>「どっちが一般的？」と聞いたところ、「<code>name:</code> を先に書くのが一般的。読んだときに何をするステップか先に分かるので」との回答。<code>name:</code> 先に修正しました。</p>
+
+<p>「既存ファイルの書き方に合わせる」と指示していたにもかかわらず逆順で出てきた点は手戻りです。<strong>完成物を既存ファイルと並べて比較する</strong>ことで気づけました。</p>
+
+<h3>変更②：「他に一緒に弾いた方がいいものない？」→ debugger の追加</h3>
+
+<p>プランレビュー中にこんなやりとりをしました。</p>
+
+<blockquote>「他にローカルホストで使いそうなURLってあったりする？また、この時一緒に弾いたほうがいいものを提案してほしい。なければないでOK」</blockquote>
+
+<p>Claude Code からの回答：</p>
+
+<ul>
+  <li><code>::1</code>（IPv6 ループバック）→ 誤検知リスクが高いので見送り</li>
+  <li><code>0.0.0.0</code>（dev サーバーのバインド先）→ <code>wrangler.toml</code> 等で正当に使われるケースがあり見送り</li>
+  <li><strong><code>debugger</code> 文</strong> → JS/TS のデバッグ用ブレークポイント。DevTools を開いているとブラウザが止まる。採用</li>
+</ul>
+
+<p>「<code>debugger</code> って何？」と聞いたら説明してくれました。</p>
+
+<blockquote>「ブラウザの DevTools を開いた状態でこのコードが実行されると、その行でブレークポイントが発動し処理が止まります。DevTools を閉じていれば影響なしですが、うっかり残った系のコードなので一緒にチェックするのが妥当です」</blockquote>
+
+<p><strong>「他にある？」の一言で、自分では思いつかなかった項目が出てきました。</strong> Claude Code は指示の範囲内で動くので、引き出すための質問が有効です。</p>
+
+<h3>変更③：トリガーを全ブランチ → main push のみに絞った</h3>
+
+<p>「LINT が毎回発生すると Actions が無限に生成されるのまずいか？」と聞いたところ：</p>
+
+<blockquote>「push を全ブランチにすると、PR に push するたびに push イベントと PR イベントの2回ワークフローが走ります。push を main のみに絞れば約半分に減ります」</blockquote>
+
+<p>これを受けて <code>push</code> を main ブランチのみに変更しました。</p>
+
+<h3>変更④：localhost と debugger が同時にあっても両方検出できるように</h3>
+
+<p>動作確認中に <code>src/test-debug-check.txt</code> に両方を入れて試したところ、問題が発覚しました。</p>
+
+<pre><code>http://localhost:3000/api
+debugger</code></pre>
+
+<p>ワークフローのステップは直列で動くため、<strong>localhost チェックが <code>exit 1</code> で失敗した時点で、debugger チェックのステップが実行されません。</strong> 両方に問題があっても、Actions 上では localhost のエラーしか表示されない状態でした。</p>
+
+<p>対処は <code>if: always()</code> を追加するだけです。これで前のステップが失敗しても、debugger チェックが必ず実行されます。</p>
+
+<pre><code>- name: Check for debugger statements
+  if: always()   ← 追加
+  run: ...</code></pre>
+
+<h2>最終的なワークフロー</h2>
+
+<p>4つの変更を経て完成したファイルです。</p>
+
+<pre><code>name: Lint - Check for debug artifacts in src/
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+jobs:
+  check-debug-artifacts:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check for local URLs (localhost / 127.0.0.1)
+        run: |
+          if grep -rEn "127\.0\.0\.1|localhost" src/; then
+            echo "ERROR: ローカルURLが src/ 内に残存しています。コミット前に修正してください。"
+            exit 1
+          else
+            echo "OK: ローカルURLは見つかりませんでした。"
+          fi
+
+      - name: Check for debugger statements
+        if: always()
+        run: |
+          if grep -rn "debugger" src/; then
+            echo "ERROR: debugger 文が src/ 内に残存しています。コミット前に削除してください。"
+            exit 1
+          else
+            echo "OK: debugger 文は見つかりませんでした。"
+          fi</code></pre>
+
+<p><strong><code>uses: actions/checkout@v4</code> について：</strong> GitHub Actions のジョブは毎回まっさらな Ubuntu 仮想マシンで動きます。最初はリポジトリのコードがどこにもないので、<code>checkout</code> でコードを取得してから <code>grep</code> を実行します。</p>
+
+<h2>動作確認</h2>
+
+<p>「本当に動くか」を段階的に確かめました。</p>
+
+<p><strong>テスト1：テキストファイルと .tsx コメントで基本動作を確認</strong></p>
+
+<p><code>src/test-local-url.txt</code> に <code>localhost</code> を追加してローカル grep を実行。さらに <code>App.tsx</code> にもコメントとして追加して、tsx ファイルのコメント行も検出されることを確認しました。</p>
+
+<pre><code>grep -rEn "127\.0\.0\.1|localhost" src/
+# → src/test-local-url.txt:2:http://localhost:3000/api
+# → src/client/App.tsx:28:// テスト用: http://localhost:3000/api</code></pre>
+
+<p><strong>コメント行も検出されます。</strong> コードの動作に影響しないコメントも grep は引っかけます。これが CLAUDE.md に「コメント内も含め書かないこと」と明記した理由です。</p>
+
+<!-- スクリーンショット: GitHub Actions のジョブ失敗画面。ログに「ERROR: ローカルURLが src/ 内に残存しています」と表示されている状態 -->
+
+<p><strong>テスト2：drafts/ は対象外であることを確認</strong></p>
+
+<p><code>drafts/</code> にも同じ内容のファイルを置いて CI が失敗しないことを確認。ワークフローの grep は <code>src/</code> のみが対象なので、<code>drafts/</code> にあっても検出されません。</p>
+
+<!-- スクリーンショット: GitHub Actions のジョブ成功画面。「OK: ローカルURLは見つかりませんでした。」と表示されている状態 -->
+
+<p><strong>テスト3：localhost と debugger が同時にある場合</strong></p>
+
+<p><code>src/test-debug-check.txt</code> に両方を入れて確認。<code>if: always()</code> の追加後は2つのステップがそれぞれ独立して失敗するようになりました。</p>
+
+<!-- スクリーンショット: GitHub Actions のジョブ失敗画面。「Check for local URLs」と「Check for debugger statements」の2ステップがどちらも赤くなっている状態 -->
+
+<p>テスト後はすべて削除して完了。</p>
+
+<h2>周辺整備</h2>
+
+<p>CI を追加したタイミングで、周辺ファイルも合わせて整備しました。</p>
+
+<p><strong>CLAUDE.md</strong> に「コメント内も含め localhost を書かない」「debugger を残さない」ルールを追記。<strong>README.md</strong> に GitHub Actions セクションを追加して、どのワークフローが動いているかを記載。</p>
+
+<!-- スクリーンショット: GitHub のリポジトリ Actions タブ。2つのワークフローが一覧表示されている状態 -->
+
+<p><strong>settings.local.json</strong> は過去の動作確認で追加したハードコード UUID 付きの <code>curl</code> コマンドが大量に残っていたので整理しました。汎用パターン <code>"Bash(curl *)"</code> 1件に集約しています。</p>
+
+<!-- スクリーンショット: settings.local.json の整理前後の差分。Before では curl コマンドが10件以上あり、After では汎用パターン「Bash(curl *)」1件に集約されている -->
+
+<h2>まとめ</h2>
+
+<p>「grep するだけだから簡単でしょ」と思っていましたが、実際にやってみると計4回の変更がありました。YAML のキー順序、追加チェック項目の検討、トリガーの絞り込み、そして <code>if: always()</code> の追加。<strong>頭の中で考えているときは見えなかった問題が、動かして初めて見えてきます。</strong></p>
+
+<p>CI に限らず Claude Code との開発全般に言えることで、<strong>計画・実装・確認のサイクルを小さく回す</strong>ことの大事さを改めて感じました。</p>
+
+<p>今回いちばんの学びは「<strong>他に入れるものない？</strong>」の一言です。最初の指示だけでは <code>debugger</code> チェックは出てきませんでした。Claude Code は指示の範囲内で動くので、引き出すための質問を意識的に入れると仕様の漏れが減ります。</p>
+
+<h2>参考リンク</h2>
+
+<ul>
+  <li><a href="https://docs.github.com/ja/actions" target="_blank" rel="noopener noreferrer">GitHub Actions 公式ドキュメント</a></li>
+  <li><a href="https://github.com/actions/checkout" target="_blank" rel="noopener noreferrer">actions/checkout</a></li>
+</ul>
