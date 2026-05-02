@@ -63,7 +63,25 @@ pnpm db:migrate
 pnpm db:migrate:prod
 ```
 
-デプロイ先: `https://guided-scheduler.sirajira.workers.dev`
+デプロイ先（本番）: https://guided-scheduler.sirajira.workers.dev
+
+デプロイ先（開発）: https://guided-scheduler-dev.sirajira.workers.dev
+
+### Cloudflare 認証
+
+```bash
+# Cloudflare へログイン（認証トークンを更新する）
+pnpm exec wrangler login
+```
+
+以下のいずれかに該当する場合に実行する。
+
+- デプロイ時に `Authentication error [code: 10000]` が出る
+- `Max auth failures reached` エラーが出る
+- 長期間 wrangler を使っていなかった（トークン期限切れ）
+- 新しいマシンで初めてセットアップするとき
+
+実行するとブラウザが開くので Cloudflare アカウントでログインする。完了後に再度デプロイコマンドを実行する。
 
 ---
 
