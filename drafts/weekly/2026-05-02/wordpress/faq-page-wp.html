@@ -1,0 +1,308 @@
+<!--
+---
+title: "Claude Codeに丸投げしてみた – Q&Aページ実装編"
+slug: "claude-code-faq-page"
+status: "draft"
+source_dates:
+  - "2026-05-02"
+tags:
+  - "Claude Code"
+  - "React"
+  - "Cloudflare Workers"
+  - "Cloudflare D1"
+  - "個人開発"
+  - "完全委任開発"
+seo_title: "Claude Codeに丸投げしてみた – Q&Aページ実装＋ローカルD1マイグレーション詰まりポイント"
+keywords: "Claude Code, React, Cloudflare D1, wrangler, ローカルD1, マイグレーション, Q&Aページ, 完全委任, 個人開発"
+meta:
+  description_candidates:
+    - "Claude Code完全委任でQ&Aページを実装。GitHubイシューをプロンプトに渡し、PLAN機能で計画を先出し、Q&A内容の提案まで任せた話。ローカルD1マイグレーション未適用のエラーと、Claudeが.mdファイルを作り忘れた話もまとめました。"
+    - "Q&AページをClaude Codeに丸投げ。削除スケジュールをGitHub Actionsから正確に読み取ってQ&Aに反映。ローカルD1でno such table: eventsが出た原因と、暗黙の慣習には弱いというClaudeの限界も解説します。"
+---
+-->
+
+<p>こんにちは、白々さじきです。</p>
+
+<p>
+  飲み会の日程調整ツールをCloudflare Workers + Hono +
+  D1で作るこの検証プロジェクト。今回は「データの削除タイミングが分からない」という問題に対応するため、<strong>Q&Aページの作成</strong>をClaude
+  Codeに丸投げしました。
+</p>
+
+<h2>なぜQ&Aページが必要になったか</h2>
+
+<p>
+  このツールには認証機能がなく、URLを知っていれば誰でもイベントに回答できます。当然「自分のデータはいつ消えるの？」という疑問が出てきます。
+</p>
+
+<p>
+  前回の記事でGitHub Actionsによる月次自動削除を実装しましたが、その仕様がアプリ内でどこにも書かれていませんでした。<strong>コードには書いてあるが、ユーザーには見えない。</strong>これを解消するのが今回の目的です。
+</p>
+
+<h2>渡したプロンプト</h2>
+
+<p>今回もGitHubイシューのURLを渡す形で依頼しました。</p>
+
+<pre><code>下記のIssueを実施するために実行計画を立ててください。この時Q&Aに記載しておいたほうがいい内容も提案してください。
+https://github.com/sirajirasajiki/guided-scheduler/issues/7</code></pre>
+
+<p>
+  前回との変更点が2つあります。「実行計画を立ててください」と「Q&Aに記載しておいたほうがいい内容も提案してください」を追加しました。
+</p>
+
+<h2>PLAN機能で実装前に計画を出させる</h2>
+
+<p>
+  Claude Codeには<strong>PLANモード</strong>という機能があります。「実行計画を立ててください」と指示すると、コードを書く前に「何をどう変えるか」の計画を出してくれます。人間がレビューしてOKを出してから実装が始まります。
+</p>
+
+<p>実際に出てきた計画はこうです。</p>
+
+<ul>
+  <li>
+    新規作成：<code>src/client/pages/faq.tsx</code>（Q&Aページ本体）
+  </li>
+  <li>変更：<code>src/client/App.tsx</code>（<code>/faq</code> ルートを追加）</li>
+  <li>
+    変更：<code>src/client/components/footer.tsx</code>（「よくある質問」リンクを追加）
+  </li>
+</ul>
+
+<p>
+  変更ファイルが3つ、いずれもフロントのみで、DBやAPIへの変更なし。計画を見ればスコープが一目で分かります。
+</p>
+
+<p>
+  大きな変更を実装させる前に計画を出してもらうと、<strong>「思ってたのと違う」を実装後ではなく計画段階で潰せます</strong>。今回のような「ページ新設＋ルート追加＋フッターリンク」程度の規模でも、PLANを挟む習慣をつけておくと安心できます。
+</p>
+
+<h2>Q&A内容もClaudeに提案させた</h2>
+
+<p>
+  今回のイシューは「Q&Aページを作る」という指示だけで、<strong>具体的な質問・回答の内容は決めていませんでした</strong>。「Q&Aに記載しておいたほうがいい内容も提案してください」とお願いすると、7件の候補を出してくれました。
+</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>#</th>
+      <th>質問</th>
+      <th>提案の根拠</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>1</td>
+      <td>データはいつ削除されますか？</td>
+      <td>イシューの主目的</td>
+    </tr>
+    <tr>
+      <td>2</td>
+      <td>回答を修正・上書きできますか？</td>
+      <td>同名上書き仕様がコードに存在</td>
+    </tr>
+    <tr>
+      <td>3</td>
+      <td>イベントや参加者データを手動で削除できますか？</td>
+      <td>削除機能が未実装なため</td>
+    </tr>
+    <tr>
+      <td>4</td>
+      <td>管理用URLを紛失した場合は？</td>
+      <td>再発行機能が未実装なため</td>
+    </tr>
+    <tr>
+      <td>5</td>
+      <td>確定日を変更できますか？</td>
+      <td>確定後変更不可の仕様</td>
+    </tr>
+    <tr>
+      <td>6</td>
+      <td>何人まで参加できますか？</td>
+      <td>上限なし（よくある疑問）</td>
+    </tr>
+    <tr>
+      <td>7</td>
+      <td>このサービスは無料ですか？</td>
+      <td>利用規約に記載があるため</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>
+  提案の質が高かったのは、<strong>Claudeがコードを読んで「この仕様はQ&Aにした方がいい」と判断していた</strong>からです。例えば「回答の上書き」はコードを読まないと分からない仕様ですが、それをQ&A候補として挙げてきました。
+</p>
+
+<p>
+  特に1番の「データはいつ削除されますか？」の回答は、<strong>GitHub
+  Actionsのワークフローファイルを直接読んで</strong>生成しています。
+</p>
+
+<blockquote>
+  毎月1日 18:00 UTC（日本時間では毎月2日
+  3:00）に、最新の候補日から30日以上経過したイベントのデータが自動的に削除されます。
+</blockquote>
+
+<p>
+  cron式 <code>0 18 1 * *</code>
+  からUTC→JST変換まで含めて正確な記述が出てきました。「自動削除があることは分かっているが、ユーザー向けの日本語説明が書けない」という状況をそのままClaudeに解消してもらえた形です。
+</p>
+
+<p>
+  <strong>教訓：「何を書くか」も丸投げできる。ただし前提としてコードの仕様をClaudeが読めている必要がある。仕様が複雑になるほど提案精度が上がる。</strong>
+</p>
+
+<h2>実装内容</h2>
+
+<p>変更は3ファイルだけです。</p>
+
+<h3>Q&Aページ本体</h3>
+
+<p>
+  <code>src/client/pages/faq.tsx</code> はこういう構造にしました。
+</p>
+
+<pre><code>const faqs: { q: string; a: string }[] = [
+  { q: "データはいつ削除されますか？", a: "毎月1日 18:00 UTC..." },
+  { q: "回答を修正・上書きできますか？", a: "はい。同じ名前で..." },
+  // ...
+];
+
+export default function Faq() {
+  return (
+    // ...
+    {faqs.map((faq, index) => (
+      &lt;section key={index}&gt;
+        &lt;h2&gt;Q. {faq.q}&lt;/h2&gt;
+        &lt;p&gt;A. {faq.a}&lt;/p&gt;
+      &lt;/section&gt;
+    ))}
+  );
+}</code></pre>
+
+<p>
+  Q&Aの内容は配列 <code>faqs</code>
+  に集約されているため、追加するときは配列に1オブジェクト足すだけです。コンポーネント側は触らなくていい設計になっています。
+</p>
+
+<h3>ルートとフッター</h3>
+
+<p>
+  <code>App.tsx</code> に <code>/faq</code> ルートを追加し、フッターに「よくある質問」リンクを追加しました。既存の「利用規約」「プライバシーポリシー」リンクは
+  <code>&lt;a target="_blank"&gt;</code> だったので、新規リンクは
+  <code>react-router-dom</code> の <code>Link</code>
+  を使ってSPA内遷移にしています。
+</p>
+
+<!-- ここに写真：Q&Aページのスクリーンショット -->
+
+<!-- ここに写真：フッターに「よくある質問」リンクが追加された様子 -->
+
+<h2>つまずいたこと</h2>
+
+<h3>① ローカルD1のマイグレーション未適用</h3>
+
+<p>実装後に動作確認をしたところ、イベント作成時にこんなエラーが出ました。</p>
+
+<pre><code>D1_ERROR: no such table: events: SQLITE_ERROR</code></pre>
+
+<p>
+  原因はシンプルです。<strong>ローカルのD1にマイグレーションを適用していなかった</strong>。開発DBはリモートD1を使っているため、ローカルで
+  <code>pnpm dev</code>
+  を起動したときのDB（ローカルSQLite）にはテーブルが存在しない状態でした。
+</p>
+
+<p>ローカルにマイグレーションを適用するコマンドはこうです。</p>
+
+<pre><code>pnpm exec wrangler d1 migrations apply guided-scheduler-dev --local --env dev</code></pre>
+
+<p>注意点が2つあります。</p>
+
+<p>
+  <strong>wrangler単体では動かない。</strong> <code>wrangler</code>
+  はdevDependenciesに入っているローカルインストールです。グローバルにインストールしていないため、直接
+  <code>wrangler</code> と叩くと <code>command not found</code> になります。<code>pnpm exec wrangler</code> と書くことでローカルインストール版が使えます。
+</p>
+
+<p>
+  <strong><code>--env dev</code> を忘れずに。</strong>
+  <code>wrangler.toml</code> でD1バインディングを定義しているのは <code>[env.dev]</code>
+  配下のみです。トップレベルにはD1の定義がないため、<code>--env dev</code>
+  を付けないとデータベースが見つかりません。
+</p>
+
+<p>
+  <strong>教訓：pnpm管理のプロジェクトでwranglerを叩くときは
+  <code>pnpm exec wrangler</code>。<code>wrangler.toml</code>
+  の構成に合わせて <code>--env</code> フラグも忘れずに。</strong>
+</p>
+
+<h3>② この記事を書かせたらClaudeがファイルを作り忘れた</h3>
+
+<p>
+  実はこの記事自体もClaude Codeに書かせています。「WordPressにはるHTMLを作成してください」と依頼したところ、<code>drafts/weekly/2026-05-02/wordpress/faq-page-wp.html</code>
+  は作成しましたが、<strong>Markdownファイルを作らなかった</strong>。
+</p>
+
+<p>気づいたのは私が「あれ、.mdは？」と聞いたときです。</p>
+
+<p>
+  このプロジェクトの <code>drafts/weekly/</code> 配下は、記事ごとに <code>.md</code> と
+  <code>wordpress/*.html</code>
+  のセットで管理しています。Claude
+  Codeはその慣習を把握していたはずですが、「WordPressにはるHTMLを作成してください」という指示の文言に引っ張られ、HTMLのみで完了と判断してしまいました。
+</p>
+
+<p>
+  <strong>Claude Codeは明示された指示には忠実に従うが、コードベースから読み取れる暗黙の慣習は見落とすことがある。</strong>
+  今回のように「セットで作るファイルがある」という規則は、指示に明示しないと片方だけ作られるリスクがあります。
+</p>
+
+<p>
+  <strong>教訓：ファイルのセット管理など暗黙の慣習は、プロンプトに明記するか
+  <code>CLAUDE.md</code>
+  に書いておく。「いつも通りに」は通じない。</strong>
+</p>
+
+<h2>学びと全体の感想</h2>
+
+<p>今回はQ&Aの内容まで含めてほぼすべてをClaude Codeに任せられました。</p>
+
+<p>
+  よかった点は<strong>「何を書くか」の提案もできる</strong>ことです。コードの仕様を読んだうえで「これはQ&Aにすべき」と判断して候補を出してくれる。人間がゼロから考えるより、提案を受けてチェック・修正する方が圧倒的に速いです。
+</p>
+
+<p>
+  一方で<strong>暗黙の慣習には弱い</strong>という面も確認できました。「WordPressのHTMLを作って」という指示でMarkdownも作るべきかどうか、Claudeは指示の文言で判断します。人間なら過去の作業パターンを見て「あ、セットで作るやつだ」と気づきますが、Claudeは明示されていない規則には気づきにくい。
+</p>
+
+<p>暗黙にしないための対策は2つあります。</p>
+
+<p>
+  <strong>① CLAUDE.mdに成果物ルールを明記する。</strong>
+  今回で言えば「ブログ記事の下書きは <code>.md</code> と <code>wordpress/*.html</code>
+  の両方を作成すること」と書いておけば、次回から指示しなくても守られます。一度書けば永続します。
+</p>
+
+<p>
+  <strong>② プロンプトに成果物リストを書く。</strong>
+  「以下のファイルを作成してください: ① faq-page.md ② wordpress/faq-page-wp.html」のように出力物を列挙する形式にすると、慣習をCLAUDE.mdに書くまでの間でも効きます。
+</p>
+
+<p>
+  発注スキルとして言うなら、<strong>「いつも通りに」という前提は捨てて、慣習はCLAUDE.mdに書く</strong>。そうしないとチェックコストが上がります。
+</p>
+
+<h2>次にやること</h2>
+
+<ul>
+  <li>
+    「トップに戻る」リンクの改善：現在すべてのページで「←
+    トップに戻る」がイベント作成ページ（<code>/</code>）に固定で遷移する。管理ページや参加者ページから来た場合は元のページに戻るようにしたい
+  </li>
+  <li>
+    CLAUDE.mdにブログ下書きの成果物ルールを追記する：<code>.md</code> と
+    <code>wordpress/*.html</code>
+    のセット作成を明文化し、次回から指示なしで守られるようにする
+  </li>
+</ul>
