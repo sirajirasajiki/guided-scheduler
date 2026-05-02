@@ -1,3 +1,5 @@
+import { Link } from "react-router-dom";
+
 export default function Footer() {
   return (
     <footer className="mt-6 py-3 text-center text-xs text-gray-400 space-x-4">
@@ -17,6 +19,9 @@ export default function Footer() {
       >
         プライバシーポリシー
       </a>
+      <Link to="/faq" className="hover:underline hover:text-gray-600">
+        よくある質問
+      </Link>
     </footer>
   );
 }

@@ -4,6 +4,7 @@ import Admin from "./pages/admin";
 import Event from "./pages/event";
 import Terms from "./pages/terms";
 import Privacy from "./pages/privacy";
+import Faq from "./pages/faq";
 import Footer from "./components/footer";
 
 function App() {
@@ -17,6 +18,7 @@ function App() {
             <Route path="/event/:shareToken" element={<Event />} />
             <Route path="/terms" element={<Terms />} />
             <Route path="/privacy" element={<Privacy />} />
+            <Route path="/faq" element={<Faq />} />
           </Routes>
         </main>
         <Footer />
