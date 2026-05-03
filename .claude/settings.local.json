@@ -24,7 +24,10 @@
       "Bash(Get-ChildItem -Path \"c:\\\\Users\\\\takag\\\\Project\\\\guided-scheduler\" -Recurse -Directory)",
       "Bash(Select-Object -ExpandProperty FullName)",
       "PowerShell(Get-ChildItem -Path \"c:\\\\Users\\\\takag\\\\Project\\\\guided-scheduler\" -Force | Select-Object Name, @{Name=\"Type\"; Expression={if\\($_.PSIsContainer\\){\"DIR\"}else{\"FILE\"}}} | Format-Table -AutoSize)",
-      "Bash(npx tsc *)"
+      "Bash(npx tsc *)",
+      "Bash(gh --version)",
+      "PowerShell(Move-Item \"c:\\\\Users\\\\takag\\\\Project\\\\guided-scheduler\\\\drafts\\\\weekly\\\\2026-05-03\\\\github-issue-slash-command.md\" \"c:\\\\Users\\\\takag\\\\Project\\\\guided-scheduler\\\\drafts\\\\weekly\\\\2026-05-02\\\\github-issue-slash-command.md\")",
+      "PowerShell(Move-Item \"c:\\\\Users\\\\takag\\\\Project\\\\guided-scheduler\\\\drafts\\\\weekly\\\\2026-05-03\\\\wordpress\\\\github-issue-slash-command-wp.html\" \"c:\\\\Users\\\\takag\\\\Project\\\\guided-scheduler\\\\drafts\\\\weekly\\\\2026-05-02\\\\wordpress\\\\github-issue-slash-command-wp.html\")"
     ]
   }
 }

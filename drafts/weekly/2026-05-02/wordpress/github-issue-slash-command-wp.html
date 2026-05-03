@@ -1,0 +1,291 @@
+<!--
+---
+title: "Claude Code のカスタムスラッシュコマンドで GitHub Issue 作成を自動化した"
+slug: "claude-code-custom-slash-command-github-issue"
+status: "draft"
+source_dates:
+  - "2026-05-03"
+tags:
+  - "Claude Code"
+  - "GitHub"
+  - "gh CLI"
+  - "開発効率化"
+seo_title: "【Claude Code】カスタムスラッシュコマンドで GitHub Issue 作成を自動化する方法"
+keywords: "Claude Code, カスタムスラッシュコマンド, GitHub Issue, gh CLI, 開発自動化"
+meta:
+  description_candidates:
+    - "Claude Code との会話中に /issue と打つだけで GitHub Issue を自動作成する仕組みを作りました。gh CLI のセットアップからカスタムスラッシュコマンドの実装、グローバル版とプロジェクト版の使い分けまで解説します。"
+    - "「これ別タスクだな」と気づいた瞬間に Issue を切り出せる仕組みを Claude Code のカスタムスラッシュコマンドで作りました。hooks との違いや、フォルダを間違えた失敗談も含めて紹介します。"
+---
+-->
+
+<p>こんにちは、白々さじきです。</p>
+
+<p>
+  飲み会の日程調整ツールをCloudflare Workers + Hono +
+  D1で作るこの検証プロジェクト。今回は開発中の雑談から生まれた「<strong>Issue 作成を <code>/issue</code> の一言で済ませる仕組み</strong>」を作りました。
+</p>
+
+<h2>なぜ Issue 作成を自動化したかったのか</h2>
+
+<p>きっかけはちょっとした出来事でした。</p>
+
+<p>
+  Claude Code とやり取りしている最中に「あ、これ別タスクに切り出したほうがいいな」と気づくことがあります。そのとき「じゃあ Issue 作って」と頼んだところ、こんな返事が来ました。
+</p>
+
+<blockquote>
+  gh CLI がインストールされていないため、GitHub Issue を直接作成できません。
+</blockquote>
+
+<p>
+  その瞬間に逆転の発想が生まれます。<strong>「gh CLI さえあれば Claude が Issue を作れる」</strong>。
+</p>
+
+<p>
+  もう一つ、Issue の質がバラバラになる問題もありました。手で書くと「背景」を省いたり「完了条件」を忘れたり、Issue によって粒度がバラバラになります。Claude に任せればフォーマットを統一できます。
+</p>
+
+<p>整理するとこういう課題でした。</p>
+
+<ul>
+  <li>gh CLI が未インストールで Claude が Issue を作れない</li>
+  <li>Issue の書き方の粒度が毎回ブレる</li>
+  <li>「別タスクだな」と気づいた瞬間に即切り出せない</li>
+</ul>
+
+<h2>gh CLI のセットアップ</h2>
+
+<p>Windows なので winget でインストールします。</p>
+
+<pre><code>winget install GitHub.cli</code></pre>
+
+<p>インストール後、認証を通します。</p>
+
+<pre><code>gh auth login</code></pre>
+
+<p>
+  <code>GitHub.com</code> → <code>HTTPS</code> → ブラウザで認証、の流れです。成功するとこう表示されます。
+</p>
+
+<pre><code>✓ Authentication complete.
+✓ Configured git protocol
+✓ Logged in as sirajirasajiki</code></pre>
+
+<p>
+  これで Claude に「gh issue create してください」と頼める状態になりました。実際にいくつか手動で依頼して Issue を作った後、「毎回頼むのも面倒だな」と思い自動化を検討します。
+</p>
+
+<h2>自動化の方法を3案検討した</h2>
+
+<h3>案A：メモリに保存する</h3>
+
+<p>
+  Claude Code にはセッションをまたいで記憶を保持する「メモリ」機能があります。Issue フォーマットをメモリに書いておく方法です。
+</p>
+
+<p>
+  却下理由：メモリは忘れる可能性があります。別の情報で上書きされたり、将来のセッションで読み込まれなかったりすると、フォーマットが崩れます。
+</p>
+
+<h3>案B：フックを使う</h3>
+
+<p>
+  Claude Code には <code>hooks</code> という設定があり、ツール実行などのイベントに応じてシェルコマンドを実行できます。
+</p>
+
+<p>
+  却下理由：hooks はシェルコマンドを実行するものです。「この会話の内容を読んで Issue の本文を生成する」という動的な処理には使えません。フォーマットが固定された単純な操作には向きますが、今回はやりたいことと噛み合いません。
+</p>
+
+<h3>案C：カスタムスラッシュコマンドを作る（採用）</h3>
+
+<p>
+  Claude Code には <code>.claude/commands/</code> 配下に Markdown ファイルを置くことで、独自の <code>/コマンド名</code> を定義できます。ファイルの中身は<strong>Claude への指示文</strong>です。つまりシェルコマンドではなく Claude のプロンプトとして動作します。
+</p>
+
+<p>
+  これなら「会話を読んで Issue を推測して、確認後に <code>gh issue create</code> を実行する」という流れが書けます。
+</p>
+
+<h2>カスタムスラッシュコマンド /issue の実装</h2>
+
+<h3>配置場所によってスコープが変わる</h3>
+
+<table>
+  <thead>
+    <tr>
+      <th>配置場所</th>
+      <th>スコープ</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>~/.claude/commands/issue.md</code></td>
+      <td>すべてのリポジトリで使えるグローバル版</td>
+    </tr>
+    <tr>
+      <td><code>.claude/commands/issue.md</code></td>
+      <td>そのプロジェクト限定のプロジェクト版</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>
+  同名コマンドが両方に存在する場合、<strong>プロジェクト版が優先</strong>されます。エラーにはならず、プロジェクト内ではプロジェクト版が使われ、他リポジトリではグローバル版が使われます。
+</p>
+
+<p>今回はブログ記事の比較用として両方作り、プロジェクト版に差分を持たせました。</p>
+
+<h3>グローバル版（~/.claude/commands/issue.md）</h3>
+
+<pre><code>会話の流れからバグ・課題・改善案を読み取り、GitHub Issue の下書きを作成してください。
+
+## 手順
+
+1. 直近の会話を読んで、Issue にすべき内容を特定する
+2. 以下のフォーマットで下書きを作成し、ユーザーに提示する
+3. ユーザーが確認・承認したら `gh issue create` で作成する
+
+## Issue フォーマット
+
+**タイトル:** （端的に課題を表す一文）
+
+**本文:**
+## 背景
+（なぜこの課題が生まれたか・どんな問題が起きているか）
+
+## やること
+（具体的な対応内容を箇条書き）
+
+## 完了条件
+（何ができていれば完了とみなすか）
+
+## 注意事項
+
+- 下書きを提示した後、必ずユーザーの承認を待ってから `gh issue create` を実行すること
+- リポジトリは現在の git リポジトリから自動判定する
+- タイトル・本文が会話から読み取れない場合はユーザーに質問する</code></pre>
+
+<h3>プロジェクト版（.claude/commands/issue.md）との差分</h3>
+
+<p>グローバル版から2点変えています。</p>
+
+<p>
+  <strong>① タスク概要セクションを追加</strong><br>
+  背景の前に概要を1段はさむことで、Issue を一覧で見たときに内容がすぐ分かります。
+</p>
+
+<p>
+  <strong>② アサインを自分に固定</strong><br>
+  個人プロジェクトなので常に自分がアサインされます。<code>--assignee sirajirasajiki</code> を毎回指定する手間がなくなります。
+</p>
+
+<h2>実際に使ってみる</h2>
+
+<p>会話の途中で <code>/issue</code> と打つだけです。Claude が会話を読んで下書きを生成します。</p>
+
+<pre><code>## タスク概要
+この記事のブログ下書きを作成する
+
+## 背景
+gh CLI の導入と Claude Code のカスタムスラッシュコマンド機能を使って、
+会話の流れから GitHub Issue を自動作成する仕組みを構築した。
+この内容をテックブログ記事としてまとめる。
+
+## やること
+- 記事の構成を決める
+- 下書きを2ファイルセットで作成する
+  - drafts/weekly/2026-05-03/{記事名}.md
+  - drafts/weekly/2026-05-03/wordpress/{記事名}-wp.html
+
+## 完了条件
+- .md と wordpress/*.html の2ファイルが作成されている
+- 読者が同じ手順を再現できる内容になっている</code></pre>
+
+<p>
+  「OK」と返すと <code>gh issue create</code> が実行されます。<a href="https://github.com/sirajirasajiki/guided-scheduler/issues/11">Issue #11</a> として作成されました。
+</p>
+
+<h2>おまけ：Issue の編集も gh CLI でできる</h2>
+
+<p>
+  gh CLI には <code>gh issue edit</code> というコマンドもあります。今回、<a href="https://github.com/sirajirasajiki/guided-scheduler/issues/10">Issue #10</a> にフォルダ命名規則の追記が必要になったとき、ブラウザを開かずそのまま Claude に編集を依頼できました。
+</p>
+
+<pre><code>gh issue edit 10 --body "新しい本文"</code></pre>
+
+<p><code>--title</code> でタイトル変更、<code>--add-label</code> でラベル追加なども可能です。</p>
+
+<p>
+  gh CLI を入れておくと Issue の作成だけでなく編集・閲覧・クローズまで Claude との会話の中で完結します。
+</p>
+
+<h2>何が解決できたか</h2>
+
+<ul>
+  <li><strong>摩擦がほぼゼロになった</strong>：「別タスクだな」と思った瞬間に <code>/issue</code> を打てば切り出せます。ブラウザを開く必要がありません</li>
+  <li><strong>フォーマットが自動で統一される</strong>：背景・タスク概要・やること・完了条件が毎回揃います</li>
+  <li><strong>会話の流れを中断しない</strong>：Issue を作るために別の画面に移る必要がなく、会話の文脈がそのまま使われます</li>
+</ul>
+
+<h2>つまずき・教訓</h2>
+
+<h3>① コマンド追加後は新しいスレッドが必要</h3>
+
+<p>
+  <code>.claude/commands/</code> にファイルを追加しても、すでに開いているスレッドでは <code>/issue</code> が認識されません。Claude Code はスレッドの起動時にコマンドを読み込むためです。
+</p>
+
+<p>
+  新しいスレッドを開始すれば使えます。ただし新スレッドで以前の会話履歴を呼び出せば、文脈を引き継いだまま <code>/issue</code> を使えます。
+</p>
+
+<p><strong>教訓：カスタムスラッシュコマンドを追加したら、一度スレッドを開き直す。</strong></p>
+
+<h3>② hooks は動的コンテンツの生成に使えない</h3>
+
+<p>
+  hooks はシェルコマンドを実行するものです。「会話を読んで Issue の内容を推測する」といった動的な処理はできません。「特定のファイルが保存されたら自動フォーマット」のような静的な操作に向いています。
+</p>
+
+<p>
+  <strong>教訓：hooks は静的な自動化、カスタムスラッシュコマンドは Claude に考えさせたい自動化、と使い分ける。</strong>
+</p>
+
+<h3>③ この記事を書かせたら Claude がフォルダを間違えた</h3>
+
+<p>
+  記事の下書き作成を依頼したところ、<code>drafts/weekly/2026-05-03/</code> という新しいフォルダを作ってしまいました。実際には 5/2（金）と 5/3（土）は同じ週なので、<code>drafts/weekly/2026-05-02/</code> に入れるべきでした。
+</p>
+
+<p>
+  原因は <code>drafts/weekly/</code> のフォルダ命名規則が CLAUDE.md に書かれていなかったことです。Claude は「今日の日付でフォルダを作る」という判断をしましたが、このプロジェクトの慣習は「週単位でフォルダを切り、同じ週の記事は同じフォルダに入れる」です。
+</p>
+
+<p>
+  手動でファイルを移動し、<a href="https://github.com/sirajirasajiki/guided-scheduler/issues/10">Issue #10</a>（CLAUDE.md へのルール追記）にフォルダ命名規則の追記も含めることにしました。
+</p>
+
+<p>
+  <strong>教訓：ファイルの配置ルールは CLAUDE.md に書かないと Claude が毎回違う判断をする。「暗黙の慣習」はゼロにする。</strong>
+</p>
+
+<h2>まとめ</h2>
+
+<p>
+  gh CLI のインストールという偶然の気づきから、カスタムスラッシュコマンドによる Issue 自動化まで一気に作りました。
+</p>
+
+<p>
+  <code>.claude/commands/</code> に Markdown を置くだけでコマンドが作れるのは想像より手軽でした。「Claude に考えさせてから実行する」処理はスラッシュコマンドとの相性が良く、他にも応用できそうです。
+</p>
+
+<p>今回の仕組みはグローバルに置いているので、このプロジェクト以外でも使えます。</p>
+
+<h2>次にやること</h2>
+
+<ul>
+  <li><a href="https://github.com/sirajirasajiki/guided-scheduler/issues/9">Issue #9</a>「トップに戻る」リンクの改善：管理ページ・参加者ページから来た場合に元のページに戻るようにする</li>
+  <li><a href="https://github.com/sirajirasajiki/guided-scheduler/issues/10">Issue #10</a>：CLAUDE.md にブログ下書きの成果物ルールを追記する</li>
+</ul>
