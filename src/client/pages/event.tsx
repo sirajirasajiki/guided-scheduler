@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
+import Footer from "../components/footer";
 import { api } from "../lib/api";
 import type { GetEventShareResponse, ResponseValue, AllergyInfo } from "../../shared/types";
 import { ALLERGEN_LIST } from "../../shared/types";
@@ -122,6 +123,7 @@ export default function Event() {
   }
 
   return (
+    <>
     <div className="flex-1 bg-gray-50 flex flex-col items-center justify-center p-4">
       <div className="bg-white rounded-2xl shadow p-8 w-full max-w-md">
         <h1 className="text-2xl font-bold text-gray-800 mb-1">{event.name}</h1>
@@ -242,5 +244,7 @@ export default function Event() {
         </form>
       </div>
     </div>
+    <Footer />
+    </>
   );
 }

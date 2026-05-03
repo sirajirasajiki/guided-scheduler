@@ -5,7 +5,6 @@ import Event from "./pages/event";
 import Terms from "./pages/terms";
 import Privacy from "./pages/privacy";
 import Faq from "./pages/faq";
-import Footer from "./components/footer";
 
 function App() {
   return (
@@ -21,7 +20,6 @@ function App() {
             <Route path="/faq" element={<Faq />} />
           </Routes>
         </main>
-        <Footer />
       </div>
     </BrowserRouter>
   );

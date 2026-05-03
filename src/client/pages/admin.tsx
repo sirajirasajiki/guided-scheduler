@@ -3,6 +3,7 @@ import { useParams } from "react-router-dom";
 import { api } from "../lib/api";
 import type { GetEventAdminResponse, ResponseValue } from "../../shared/types";
 import { ALLERGEN_LIST } from "../../shared/types";
+import Footer from "../components/footer";
 
 const LABELS: Record<ResponseValue, string> = { o: "◯", d: "△", x: "×" };
 const CELL_COLORS: Record<ResponseValue, string> = {
@@ -92,6 +93,7 @@ export default function Admin() {
     Object.keys(allergyCountMap).length > 0 || Object.keys(otherAllergyCountMap).length > 0;
 
   return (
+    <>
     <div className="flex-1 bg-gray-50 p-4">
       <div className="max-w-2xl mx-auto space-y-6">
         {/* ヘッダー */}
@@ -231,5 +233,7 @@ export default function Admin() {
         </div>
       </div>
     </div>
+    <Footer />
+    </>
   );
 }

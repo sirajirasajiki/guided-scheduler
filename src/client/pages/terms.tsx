@@ -1,12 +1,14 @@
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 
 export default function Terms() {
+  const location = useLocation();
+  const backTo = (location.state as { from?: string } | null)?.from ?? "/";
   return (
     <div className="flex-1 bg-gray-50 p-4">
       <div className="max-w-2xl mx-auto py-8">
         <div className="mb-4">
-          <Link to="/" className="text-sm text-blue-600 hover:underline">
-            ← トップに戻る
+          <Link to={backTo} className="text-sm text-blue-600 hover:underline">
+            ← 戻る
           </Link>
         </div>
 

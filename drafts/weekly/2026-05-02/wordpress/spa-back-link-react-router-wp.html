@@ -1,0 +1,162 @@
+<p>こんにちは、白々さじきです。</p>
+
+<p>飲み会の日程調整ツールをCloudflare Workers + Hono + D1で作るこの検証プロジェクト。今回はGitHub Issueで見つけた「← トップに戻る」バグの修正に取り組みました。</p>
+
+<p>バグ自体はシンプルに見えました。<strong>1行直せば終わる</strong>、そう思っていました。</p>
+
+<p>実際には4つの設計判断が連鎖し、8ファイルの変更になりました。</p>
+
+<hr>
+
+<h2>バグの概要：なぜ常にトップに戻るのか</h2>
+
+<p>このツールには利用規約・プライバシーポリシー・FAQの3ページがあります。各ページの上部に「← トップに戻る」リンクがあるのですが、どこから来ても常に <code>/</code>（イベント作成ページ）に飛んでしまいます。</p>
+
+<pre><code>// 3ページ全てに同じコードが書かれていた
+&lt;Link to="/" className="text-sm text-blue-600 hover:underline"&gt;
+  ← トップに戻る
+&lt;/Link&gt;</code></pre>
+
+<p>管理ページから利用規約を開いたら、管理ページに戻りたい。イベントページから来たら、そちらに戻りたい。それが普通の動作です。</p>
+
+<p><strong>そしてこれは、初回実装（Claude Code完全委任）では気づかなかった問題です。</strong></p>
+
+<p>利用規約ページを作るとき、「どこから来るか」を意識していませんでした。「作って終わり」になっていた。Claude Codeへの完全委任では、こういう「遷移元を考慮した動作」が抜けやすいです。これがまさに検証プロジェクトで観測したかった「理解負債」の一形態でした。</p>
+
+<hr>
+
+<h2>調査：フッターリンクに2種類混在していた</h2>
+
+<p>修正を始める前に既存コードを調べると、フッターのリンク実装が2種類混在していました。</p>
+
+<pre><code>// footer.tsx
+&lt;a href="/terms" target="_blank" rel="noopener noreferrer"&gt;
+  利用規約
+&lt;/a&gt;
+&lt;a href="/privacy" target="_blank" rel="noopener noreferrer"&gt;
+  プライバシーポリシー
+&lt;/a&gt;
+&lt;Link to="/faq"&gt;
+  よくある質問
+&lt;/Link&gt;</code></pre>
+
+<p>利用規約とプライバシーポリシーは <code>&lt;a target="_blank"&gt;</code> で<strong>新しいタブ</strong>で開く。FAQは <code>&lt;Link&gt;</code> でSPA内遷移。この違いが、実装方法の選択に影響します。</p>
+
+<hr>
+
+<h2>設計判断①：document.referrer か location.state か</h2>
+
+<p>フッターに <code>&lt;a target="_blank"&gt;</code> があったため、「新しいタブで開く遷移元をどう取得するか」という文脈で <code>document.referrer</code> が候補に上がりました。</p>
+
+<p><a href="https://developer.mozilla.org/ja/docs/Web/API/Document/referrer"><code>document.referrer</code></a> はブラウザ組み込みのプロパティで、「今のページを開く直前にいたページのURL」が入ります。仕組みはHTTPの <a href="https://developer.mozilla.org/ja/docs/Web/HTTP/Reference/Headers/Referer"><code>Referer</code> ヘッダー</a>で、ブラウザがページを読み込む際に自動で付与します。新しいタブで開く場合は新しいHTTPリクエストが発生するため、<code>document.referrer</code> に正しくリンク元URLが入ります。</p>
+
+<p>しかし <strong>SPA内遷移（<code>&lt;Link&gt;</code>）では <code>document.referrer</code> は空になります</strong>。</p>
+
+<p><code>&lt;Link&gt;</code> はHTTPリクエストを発生させず、JavaScriptで画面を書き換えるだけです。ブラウザ側は「ページ遷移した」と認識しないため <code>Referer</code> ヘッダーを送らず、<code>document.referrer</code> は更新されません。FAQのようにSPA内遷移するページでは使えないとわかりました。（参照：<a href="https://react-router-docs-ja.techtalk.jp/api/components/Link">React Router <code>&lt;Link&gt;</code></a> ※非公式日本語訳）</p>
+
+<p>React Routerにはこういったケース向けの機能があります。<code>&lt;Link&gt;</code> に <code>state</code> を渡せば、遷移先で <a href="https://react-router-docs-ja.techtalk.jp/api/hooks/useLocation"><code>useLocation()</code></a>（非公式日本語訳）から読み取れます。</p>
+
+<pre><code>// リンク側（footer.tsx）
+&lt;Link to="/faq" state={{ from: location.pathname }}&gt;
+  よくある質問
+&lt;/Link&gt;
+
+// 遷移先（faq.tsx）
+const location = useLocation();
+const backTo = (location.state as { from?: string } | null)?.from ?? '/';</code></pre>
+
+<p><strong>教訓：<code>document.referrer</code> はSPA遷移（<code>&lt;Link&gt;</code>）では使えない。React RouterではLocation stateを使う。</strong></p>
+
+<hr>
+
+<h2>設計判断②：フッターリンクを &lt;Link&gt; に統一する</h2>
+
+<p><strong>SPA内のページへのリンクに <code>&lt;a href&gt;</code> を使うのは慣習に反します。</strong></p>
+
+<p><code>&lt;a href&gt;</code> はフルページリロードを引き起こします。新しいタブで開く場合も、開いた先のページはSPAの文脈から切り離されます。同じアプリ内のページへのリンクには基本的に <code>&lt;Link&gt;</code> を使うべきです。</p>
+
+<p>フッターの3リンクをすべて <code>&lt;Link state={{ from: location.pathname }}&gt;</code> に統一しました。</p>
+
+<pre><code>// 統一後のfooter.tsx
+const location = useLocation();
+
+&lt;Link to="/terms" state={{ from: location.pathname }}&gt;利用規約&lt;/Link&gt;
+&lt;Link to="/privacy" state={{ from: location.pathname }}&gt;プライバシーポリシー&lt;/Link&gt;
+&lt;Link to="/faq" state={{ from: location.pathname }}&gt;よくある質問&lt;/Link&gt;</code></pre>
+
+<p><strong>教訓：SPA内のページへのリンクは外部リンクでない限り <code>&lt;Link&gt;</code> を使う。</strong></p>
+
+<hr>
+
+<h2>設計判断③：「行き止まりページ」のフッターを消す</h2>
+
+<p><code>&lt;Link&gt;</code> に統一したところで、新たな問題が見えてきました。</p>
+
+<p>フッターは全ページに表示されているので、利用規約ページからプライバシーポリシーへ移動すると <code>state.from</code> が上書きされます。</p>
+
+<ul>
+<li>管理ページ → 利用規約：<code>state.from = '/admin/abc123'</code></li>
+<li>利用規約 → プライバシーポリシー：<code>state.from = '/terms'</code></li>
+<li>プライバシーポリシーの「← 戻る」→ <code>/terms</code> へ ✓</li>
+<li><code>/terms</code> の「← 戻る」→ stateがない → <code>/</code> へ ✗</li>
+</ul>
+
+<p>ここで発想を変えました。<strong>そもそも利用規約・プライバシーポリシー・FAQのフッターを消せばいい。</strong></p>
+
+<p>GitHub・Stripe・Notionなど一般的なサービスを見ると、利用規約やプライバシーポリシーのページにはナビゲーションフッターがありません。これらは「読んで戻るだけ」の行き止まりページです。</p>
+
+<p>フッターを消すことで、チェーン遷移の問題を根本から消滅させました。</p>
+
+<p><strong>教訓：ユーザーが「読んで戻る」だけのページにはナビゲーションを置かない。フッターリンクを消すことが設計上正しいこともある。</strong></p>
+
+<hr>
+
+<h2>設計判断④：App.tsx から Footer を外してページ管理に移す</h2>
+
+<p>今度は回答送信後のサンクスページが問題になりました。</p>
+
+<p>このツールでは <code>/event/:shareToken</code>（回答フォーム）でフォームを送信すると、<strong>同じルートのまま</strong> <code>submitted</code> stateが <code>true</code> になり、「回答を送信しました ✅」という画面に切り替わります。</p>
+
+<p>このサンクス画面にフッターが表示されていると、そこから利用規約を開いて「← 戻る」を押すと、フォームページに戻ってしまいます。</p>
+
+<p><strong>問題は、同じルートのサブ状態でフッターの出し分けが必要という点です。</strong> App.tsx のルートベース除外では、同じルートの <code>submitted</code> state を見分けられません。</p>
+
+<p>解決策はシンプルでした。<strong>Footer を App.tsx から外して、各ページコンポーネントが直接持つようにする。</strong></p>
+
+<pre><code>// event.tsx
+if (submitted) {
+  return &lt;div&gt;...サンクス画面（Footerなし）...&lt;/div&gt;;
+}
+
+return (
+  &lt;&gt;
+    &lt;div&gt;...フォーム...&lt;/div&gt;
+    &lt;Footer /&gt;  // フォーム表示時のみ
+  &lt;/&gt;
+);</code></pre>
+
+<p><strong>教訓：グローバルレイアウトではコンポーネントの「サブ状態」を制御できない。ページ固有の表示ロジックはページに持たせる。</strong></p>
+
+<hr>
+
+<h2>まとめ：「小さいバグが設計を問い直す」</h2>
+
+<table>
+<thead>
+<tr><th>#</th><th>設計判断</th><th>教訓</th></tr>
+</thead>
+<tbody>
+<tr><td>①</td><td><code>document.referrer</code> より <code>location.state</code></td><td>SPA遷移にはReferrerが使えない</td></tr>
+<tr><td>②</td><td>フッターリンクを <code>&lt;Link&gt;</code> に統一</td><td>SPA内リンクは <code>&lt;Link&gt;</code> を使う</td></tr>
+<tr><td>③</td><td>法的ページのフッターを消す</td><td>行き止まりページにナビゲーションは不要</td></tr>
+<tr><td>④</td><td>Footer を App.tsx からページに移す</td><td>グローバルレイアウトはサブ状態を制御できない</td></tr>
+</tbody>
+</table>
+
+<p>変更ファイル：App.tsx / footer.tsx / terms.tsx / privacy.tsx / faq.tsx / create-event.tsx / admin.tsx / event.tsx（計8ファイル）</p>
+
+<p>修正するたびに「次の問題」が出てきたのは、<strong>表層的なコード修正ではなく設計レベルで直していた</strong>からだと思います。最初に <code>&lt;Link to="/"&gt;</code> を <code>&lt;Link to={backTo}&gt;</code> に書き換えるだけなら5分で終わりました。でもそれをすると別の問題が顕在化する。</p>
+
+<p>Claude Codeとの会話を通じて「なぜそうなっているのか」を問い続けることで、根本的に正しい設計に近づいていきました。</p>
+
+<p>これが完全委任開発の醍醐味かもしれません。実装は委任しても、設計の問いを投げるのは人間の仕事です。</p>

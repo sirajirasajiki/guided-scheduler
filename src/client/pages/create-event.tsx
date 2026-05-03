@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { api } from "../lib/api";
 import type { CreateEventResponse } from "../../shared/types";
+import Footer from "../components/footer";
 
 const MIN_DATES = 3;
 const MAX_DATES = 5;
@@ -109,6 +110,7 @@ export default function CreateEvent() {
   }
 
   return (
+    <>
     <div className="flex-1 bg-gray-50 flex flex-col items-center justify-center p-4">
       <div className="bg-white rounded-2xl shadow p-8 w-full max-w-md">
         <h1 className="text-2xl font-bold text-gray-800 mb-1">イベント作成</h1>
@@ -185,5 +187,7 @@ export default function CreateEvent() {
         </form>
       </div>
     </div>
+    <Footer />
+    </>
   );
 }
