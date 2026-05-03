@@ -1,0 +1,242 @@
+<!--
+---
+title: "Claude Code の /issue コマンドをバグ・タスク判定対応に進化させた"
+slug: "issue-command-bug-task-detection"
+status: "draft"
+source_dates:
+  - "2026-05-03"
+tags:
+  - "Claude Code"
+  - "GitHub"
+  - "gh CLI"
+  - "開発効率化"
+seo_title: "【Claude Code】/issue コマンドにバグ・タスク判定を追加した方法"
+keywords: "Claude Code, カスタムスラッシュコマンド, GitHub Issue, バグ報告, タスク管理"
+meta:
+  description_candidates:
+    - "Claude Code の /issue コマンドにバグ・タスクの自動判定を追加しました。型ごとにテンプレートを切り替え、--label も自動付与。コマンド名の衝突で詰まった話も含めて紹介します。"
+    - "/issue コマンドをバグとタスクで使い分けられるよう改善しました。.github/ISSUE_TEMPLATE/ の整備と型判定ロジックの追加、コマンド名衝突の解消までを解説します。"
+    - "バグもタスクも同じ Issue テンプレートで済ませていませんか？Claude Code のカスタムスラッシュコマンドで型判定を実装して、Issue の品質を一段上げた話です。"
+---
+-->
+
+<p>こんにちは、白々さじきです。</p>
+
+<p>
+  前回の記事で、Claude Code のカスタムスラッシュコマンドを使って GitHub Issue 作成を自動化しました。便利ではあったのですが、使っているうちに「バグもタスクも同じテンプレートでいいの？」という疑問が出てきました。
+</p>
+
+<p>今回はその改善として、バグ・タスクの自動判定と .github/ISSUE_TEMPLATE/ の整備を行った話です。</p>
+
+<h2>はじめに：前回から見えた課題</h2>
+
+<p>前回作った <code>/issue</code> コマンドのフォーマットはこんな構成でした。</p>
+
+<pre><code>## タスク概要
+## 背景
+## やること
+## 完了条件</code></pre>
+
+<p>
+  これはタスク向けの構成です。バグを報告するときは「背景」よりも「再現手順」「期待する動作」「実際の動作」が必要です。同じフォーマットで無理やり書くと「再現手順を背景に書く」という変なことになります。
+</p>
+
+<p>整理するとこういう課題です。</p>
+
+<ul>
+  <li>バグとタスクで必要な情報が違うのに、テンプレートが1種類しかない</li>
+  <li>GitHub の <code>--label</code> も手動指定が必要で、bug / task の分類が属人的になっていた</li>
+  <li><code>.github/ISSUE_TEMPLATE/</code> が空で、ブラウザから Issue を作るときにもテンプレートがない</li>
+</ul>
+
+<h2>.github/ISSUE_TEMPLATE/ の整備</h2>
+
+<p>まず GitHub 標準のテンプレートを作りました。ブラウザから Issue を作成するときに使われます。</p>
+
+<h3>bug_report.md</h3>
+
+<pre><code>---
+name: バグ報告
+about: 不具合を報告する
+title: ''
+labels: bug
+assignees: sirajirasajiki
+---
+
+## 再現手順
+
+## 期待する動作
+
+## 実際の動作
+
+## 完了条件</code></pre>
+
+<h3>task.md</h3>
+
+<pre><code>---
+name: タスク
+about: 機能追加・改善・作業依頼
+title: ''
+labels: task
+assignees: sirajirasajiki
+---
+
+## タスク概要
+
+## 背景
+
+## やること
+
+## 完了条件</code></pre>
+
+<p>
+  <code>labels</code> と <code>assignees</code> をフロントマターに書いておくと、ブラウザから Issue を作るときに自動でセットされます。ラベルは事前に GitHub 上で作成しておく必要があります（未作成だとエラーになります）。
+</p>
+
+<h2>/issue コマンドの型判定ロジック</h2>
+
+<p>次に <code>/issue</code> コマンド側を改善しました。ポイントは<strong>会話の内容からバグかタスクかを自動判定する</strong>ことです。</p>
+
+<h3>判定基準</h3>
+
+<table>
+  <thead>
+    <tr>
+      <th>判定</th>
+      <th>キーワード例</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>バグ</td>
+      <td>「動かない」「エラーが出る」「おかしい」「壊れている」</td>
+    </tr>
+    <tr>
+      <td>タスク</td>
+      <td>「作りたい」「追加したい」「改善したい」「修正したい」</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>判断に迷う場合はユーザーに確認します。</p>
+
+<h3>バグ用テンプレート</h3>
+
+<pre><code>## タスク概要
+（バグの概要を1〜2文で要約）
+
+## 再現手順
+（バグを再現するための手順を箇条書き）
+
+## 期待する動作
+（本来こうなるはずという動作）
+
+## 実際の動作
+（実際に起きていること）
+
+## 完了条件
+（何ができていれば修正完了とみなすか）</code></pre>
+
+<p>実行コマンド：<code>gh issue create --assignee sirajirasajiki --label bug</code></p>
+
+<h3>タスク用テンプレート</h3>
+
+<pre><code>## タスク概要
+（Issue の目的を1〜2文で要約）
+
+## 背景
+（なぜこの課題が生まれたか・どんな問題が起きているか）
+
+## やること
+（具体的な対応内容を箇条書き）
+
+## 完了条件
+（何ができていれば完了とみなすか）</code></pre>
+
+<p>実行コマンド：<code>gh issue create --assignee sirajirasajiki --label task</code></p>
+
+<h3>グローバル版との差分</h3>
+
+<p>
+  このプロジェクト版には <code>--assignee sirajirasajiki</code> が入っていますが、グローバル版には入っていません。個人プロジェクト以外ではアサインを固定するのが不適切なためです。グローバル版は <code>--label bug</code> / <code>--label task</code> だけ付与します。
+</p>
+
+<h3>実際に作成した Issue</h3>
+
+<p>このコマンドを使って作成した例です。</p>
+
+<ul>
+  <li>バグ：<a href="https://github.com/sirajirasajiki/guided-scheduler/issues/14">#14「トップに戻る」リンクが遷移元に関わらず常に / に戻る</a></li>
+  <li>タスク：<a href="https://github.com/sirajirasajiki/guided-scheduler/issues/13">#13 CLAUDE.md にブログ下書きの成果物ルールを追記する</a></li>
+</ul>
+
+<p>会話の内容から型を判定し、対応するテンプレートで下書きが生成されました。</p>
+
+<h2>つまずき：コマンド名の衝突</h2>
+
+<p>改善版を作るときに一度ハマりました。</p>
+
+<p>元の構成はこうでした。</p>
+
+<pre><code>~/.claude/commands/issue.md       ← グローバル版
+.claude/commands/issue.md         ← プロジェクト版</code></pre>
+
+<p>
+  同名のコマンドが両方に存在する場合、<strong>プロジェクト版が優先される</strong>はずです。ところが、改善版のプロジェクト版コマンドを呼び出しても、実行されているのがグローバル版の古い動作になっていました。また、Issue コマンドが一つしか表示されませんでした。
+</p>
+
+<p>
+  原因を調べると、コマンド名が完全一致していたため、スレッドの読み込みタイミングによって挙動が変わっていたようです。
+</p>
+
+<p>解決策として、プロジェクト版のファイル名を <code>issue-guided-scheduler.md</code> にリネームしました。</p>
+
+<pre><code>~/.claude/commands/issue.md                         ← グローバル版（そのまま）
+.claude/commands/issue-guided-scheduler.md          ← プロジェクト版（リネーム）</code></pre>
+
+<p>
+  プロジェクト内では <code>/issue-guided-scheduler</code> を使い、他のリポジトリでは <code>/issue</code> を使う、という使い分けになります。
+</p>
+
+<p>
+  <strong>教訓：グローバル版と同名のコマンドをプロジェクト版に作ると、どちらが呼ばれるか不安定になることがある。プロジェクト固有コマンドには最初からプロジェクト名を含む名前をつける。</strong>
+</p>
+
+<h2>おまけ：/article コマンドの整備で気づいたこと</h2>
+
+<p>
+  今回の作業と並行して、ブログ記事の下書きを自動化する <code>/article</code> コマンドも整備しました。そのときに一つ気になったことがあります。
+</p>
+
+<p>
+  Claude Code の <code>EnterPlanMode</code> 機能はプランを <code>~/.claude/plans/</code> に保存します。これはグローバルなディレクトリなので、プロジェクトのコンテキストで作ったプランがリポジトリの外に散らばります。
+</p>
+
+<p>
+  解決策として、このプロジェクトではプランを <code>docs/plans/</code> に保存するよう、コマンドファイルとメモリの両方に明記しました。
+</p>
+
+<pre><code># .claude/commands/article-guided-scheduler.md に追記
+
+## プランファイルの保存先（このプロジェクト固有）
+
+- EnterPlanMode で作成したプランは `docs/plans/plan-{slug}.md` に保存する
+- デフォルトの `~/.claude/plans/` には保存しない</code></pre>
+
+<p>
+  <strong>教訓：Claude Code のデフォルト保存先はグローバルになっていることが多い。プロジェクト固有のルールはコマンドファイルに明示しないと毎回違う場所に置かれる。</strong>
+</p>
+
+<h2>まとめ</h2>
+
+<p>
+  バグとタスクでテンプレートを分けたことで、Issue の中身が最初から整うようになりました。「再現手順が書いてない」「期待する動作が不明」といった Issue が減ります。
+</p>
+
+<p>今回の改善で学んだことをまとめます。</p>
+
+<ul>
+  <li><strong>バグとタスクは最初から別テンプレートにする</strong>。後から分けるのは手間がかかる</li>
+  <li><strong>プロジェクト固有コマンドには最初からプロジェクト名を含む名前をつける</strong>。グローバルと同名にすると衝突リスクがある</li>
+  <li><strong>Claude Code のデフォルト動作（ファイル保存先など）は把握しておく</strong>。把握していないとプロジェクトのルールとズレが生じる</li>
+</ul>
