@@ -1,44 +1,48 @@
 # 幹事ツール - Claude Code 完全委任検証プロジェクト
 
 ## プロジェクト概要
+
 飲み会・イベントの日程調整と店候補共有を行うWebツール。
 本プロジェクトは Claude Code への完全委任開発を検証する目的で実施する、
 2週間のタイムボックス付き検証プロジェクトである。
 
 ## 検証の目的
+
 - アイデアから動くものまでのデリバリー速度を測定する
 - Claude Code 完全委任時の「理解負債」の発生を観測する
 - 発注スキル(要件定義力)の訓練
 - ブログ記事化を前提とした定量・定性データの収集
 
 ## 検証スケジュール(参考)
-- Day 1     : セットアップ(人間主導)
-- Day 2-4   : 初回実装(Claude Code 完全委任)
-- Day 5-6   : 意図的に空ける
-- Day 7     : 機能追加①(店候補共有)
-- Day 8-9   : 意図的に空ける
-- Day 10    : 機能追加②(Day 7 時点で決定)
+
+- Day 1 : セットアップ(人間主導)
+- Day 2-4 : 初回実装(Claude Code 完全委任)
+- Day 5-6 : 意図的に空ける
+- Day 7 : 機能追加①(店候補共有)
+- Day 8-9 : 意図的に空ける
+- Day 10 : 機能追加②(Day 7 時点で決定)
 - Day 11-12 : 空ける or バグ修正
-- Day 13    : 総括・コードリーディング日
-- Day 14    : ブログ記事執筆
+- Day 13 : 総括・コードリーディング日
+- Day 14 : ブログ記事執筆
 
 ---
 
 ## 技術スタック
 
-- フロントエンド  : React + Vite + TypeScript + Tailwind CSS
-- バックエンド    : Hono + TypeScript
-- DB              : Cloudflare D1 (SQLite)
-- ORM             : Drizzle ORM
-- 実行環境        : Cloudflare Workers (単一 Worker)
-- 静的アセット    : Workers Assets (同一 Worker 内で SPA を配信)
-- パッケージ管理  : pnpm
-- デプロイ        : wrangler deploy
+- フロントエンド : React + Vite + TypeScript + Tailwind CSS
+- バックエンド : Hono + TypeScript
+- DB : Cloudflare D1 (SQLite)
+- ORM : Drizzle ORM
+- 実行環境 : Cloudflare Workers (単一 Worker)
+- 静的アセット : Workers Assets (同一 Worker 内で SPA を配信)
+- パッケージ管理 : pnpm
+- デプロイ : wrangler deploy
 
 ### 構成の特徴
+
 - フロントとバックエンドを同一 Worker 内で配信する
-  - `/api/*`  → Hono が処理
-  - それ以外  → Workers Assets から React の SPA を配信
+  - `/api/*` → Hono が処理
+  - それ以外 → Workers Assets から React の SPA を配信
 - CORS 設定不要、ドメイン1つで完結、デプロイ1コマンド
 
 ---
@@ -82,6 +86,7 @@ guided-scheduler/
 ## 機能スコープ
 
 ### 初回実装 (Day 2-4)
+
 - 幹事がイベントを作成できる
   - イベント名
   - 候補日 3〜5 個
@@ -96,6 +101,7 @@ guided-scheduler/
   - 確定日の選択・決定
 
 ### 機能追加 ① (Day 7)
+
 - 幹事が店候補を追加できる
   - 店名
   - URL
@@ -103,6 +109,7 @@ guided-scheduler/
 - 参加者ページで店候補を閲覧できる
 
 ### 機能追加 ② (Day 10)
+
 - **未定**。Day 7 終了時点の理解負債状況を見て決定する
 - 候補 : 店への投票機能 / コメント機能 / etc
 
@@ -128,27 +135,30 @@ guided-scheduler/
 Drizzle schema を `src/server/db/schema.ts` に定義する。
 
 ### events
-- `id`             : text (UUID), PK
-- `name`           : text, NOT NULL
-- `admin_token`    : text (UUID), UNIQUE, NOT NULL
-- `share_token`    : text (UUID), UNIQUE, NOT NULL
+
+- `id` : text (UUID), PK
+- `name` : text, NOT NULL
+- `admin_token` : text (UUID), UNIQUE, NOT NULL
+- `share_token` : text (UUID), UNIQUE, NOT NULL
 - `candidate_dates`: text (JSON array of ISO date strings)
 - `confirmed_date` : text (nullable, ISO date)
-- `created_at`     : integer (unix timestamp)
+- `created_at` : integer (unix timestamp)
 
 ### participants
-- `id`         : text (UUID), PK
-- `event_id`   : text, FK → events.id
-- `name`       : text, NOT NULL
-- `responses`  : text (JSON : `{ [date: string]: "o" | "d" | "x" }`)
+
+- `id` : text (UUID), PK
+- `event_id` : text, FK → events.id
+- `name` : text, NOT NULL
+- `responses` : text (JSON : `{ [date: string]: "o" | "d" | "x" }`)
 - `created_at` : integer (unix timestamp)
 
 ### restaurants (Day 7 で追加)
-- `id`         : text (UUID), PK
-- `event_id`   : text, FK → events.id
-- `name`       : text, NOT NULL
-- `url`        : text (nullable)
-- `memo`       : text (nullable)
+
+- `id` : text (UUID), PK
+- `event_id` : text, FK → events.id
+- `name` : text, NOT NULL
+- `url` : text (nullable)
+- `memo` : text (nullable)
 - `created_at` : integer (unix timestamp)
 
 ---
@@ -181,54 +191,60 @@ Drizzle schema を `src/server/db/schema.ts` に定義する。
 
 ## 命名規則
 
-- ファイル名     : kebab-case (例: `event-form.tsx`)
+- ファイル名 : kebab-case (例: `event-form.tsx`)
 - コンポーネント : PascalCase
-- 関数・変数     : camelCase
+- 関数・変数 : camelCase
 - DB テーブル・カラム : snake_case
 - API エンドポイント : RESTful
-  - `POST   /api/events`                    : イベント作成
-  - `GET    /api/events/admin/:adminToken`  : 管理用取得
-  - `GET    /api/events/share/:shareToken`  : 共有用取得
+  - `POST   /api/events` : イベント作成
+  - `GET    /api/events/admin/:adminToken` : 管理用取得
+  - `GET    /api/events/share/:shareToken` : 共有用取得
   - `POST   /api/events/share/:shareToken/participants` : 回答送信
-  - `PATCH  /api/events/admin/:adminToken/confirm`      : 確定日決定
-  - `POST   /api/events/admin/:adminToken/restaurants`  : 店候補追加 (Day 7)
+  - `PATCH  /api/events/admin/:adminToken/confirm` : 確定日決定
+  - `POST   /api/events/admin/:adminToken/restaurants` : 店候補追加 (Day 7)
 
 ---
 
 ## 実装上の重要ルール
 
 ### ローカルURL・デバッグコードの禁止
+
 - `src/` 配下のファイルでは、コメント内も含め `localhost` / `127.0.0.1` を記述しないこと
 - `src/` 配下のファイルに `debugger` 文を残さないこと
 - CI (GitHub Actions) で自動検出され、ビルドが失敗する
 
 ### Workers Runtime 制約
+
 - Node.js 固有 API (`fs`, `path`, `process`, `net` 等) は使用禁止
 - 使用するライブラリは Workers Runtime 互換のものに限る
 - 環境変数は `env` バインディング経由で取得する
 
 ### DB アクセス
+
 - DB 接続は D1 バインディング経由 (`env.DB`)
 - 外部接続文字列は使わない
 - クエリは Drizzle ORM 経由。生 SQL は原則使用禁止(マイグレーションを除く)
 
 ### フッターの扱い
+
 - `<Footer />` は App.tsx ではなく各ページコンポーネントが直接 import して使う
 - 新規ページ追加時は `<Footer />` を return に含めること
 - 含めない例外: 利用規約・プライバシーポリシー・FAQ・サンクス系など「行き止まり」のページ
 
 ### ライブラリ追加
+
 - 新規ライブラリの追加は**事前相談**
 - Workers Runtime 互換性を必ず確認すること
 - バージョンは執筆時点の最新を使う
 
 ### 情報の鮮度
+
 - **推測で書かない**。Cloudflare エコシステムは変化が速く、学習データが古い可能性がある
 - 不明点は公式ドキュメントを参照すること
   - Cloudflare Workers : https://developers.cloudflare.com/workers/
-  - Cloudflare D1       : https://developers.cloudflare.com/d1/
-  - Hono                : https://hono.dev/
-  - Drizzle ORM         : https://orm.drizzle.team/
+  - Cloudflare D1 : https://developers.cloudflare.com/d1/
+  - Hono : https://hono.dev/
+  - Drizzle ORM : https://orm.drizzle.team/
 - 特に以下の領域は古い情報が出回っているので注意
   - Workers Assets (Pages ではない)
   - D1 のバインディング方式
@@ -246,6 +262,13 @@ Drizzle schema を `src/server/db/schema.ts` に定義する。
 - スコープ外機能の提案・実装は行わない
 - 動作確認済みでない限り「動きました」と報告しない
 - エラーが出た場合は、推測で修正せず原因を特定してから修正する
+
+---
+
+## プランファイルの保存先
+
+- EnterPlanMode で作成したプランは `docs/plans/plan-{slug}.md` に保存する
+- デフォルトの `~/.claude/plans/` には保存しない
 
 ---
 
@@ -283,10 +306,10 @@ pnpm typecheck        # TypeScript 型チェック
 
 Day 14 の振り返り時に自己採点する。
 
-- **速度**      : 着想からデプロイまでの実時間 (目標: 初回実装 8 時間以内)
-- **理解度**    : Day 7 / Day 10 で機能追加する際、自力で修正箇所を即答できたか (5段階)
-- **発注品質**  : Claude Code への指示で手戻りが発生した回数
-- **再現性**    : 同じ手順を別プロジェクトで使えそうか (5段階)
+- **速度** : 着想からデプロイまでの実時間 (目標: 初回実装 8 時間以内)
+- **理解度** : Day 7 / Day 10 で機能追加する際、自力で修正箇所を即答できたか (5段階)
+- **発注品質** : Claude Code への指示で手戻りが発生した回数
+- **再現性** : 同じ手順を別プロジェクトで使えそうか (5段階)
 - **コード規模**: 総行数・ファイル数 (目安: 初回 1000 行以下、最終 1500 行以下)
 
 ---
