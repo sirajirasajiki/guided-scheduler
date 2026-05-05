@@ -35,7 +35,44 @@
       "Bash(Get-ChildItem -Path \"c:\\\\Users\\\\takag\\\\Project\\\\guided-scheduler\\\\drafts\\\\weekly\\\\\" -ErrorAction SilentlyContinue | Select-Object Name, PSIsContainer)",
       "WebSearch",
       "WebFetch(domain:react-router-docs-ja.techtalk.jp)",
-      "Bash(Remove-Item \"C:\\\\Users\\\\takag\\\\.claude\\\\plans\\\\https-github-com-sirajirasajiki-guided-replicated-nova.md\")"
-    ]
+      "Bash(Remove-Item \"C:\\\\Users\\\\takag\\\\.claude\\\\plans\\\\https-github-com-sirajirasajiki-guided-replicated-nova.md\")",
+      "Bash(python3 -c \"import datetime; d=datetime.date\\(2026,5,2\\); print\\(d.strftime\\('%A'\\)\\); d2=datetime.date\\(2026,5,5\\); print\\(d2.strftime\\('%A'\\)\\)\")"
+    ],
+    "deny": [
+      "Read(.env)",
+      "Read(.env.*)",
+      "Read(**/.env)",
+      "Read(**/.env.*)",
+      "Read(**/*.pem)",
+      "Read(**/*credentials*)",
+      "Read(**/secrets/**)",
+      "Edit(.env)",
+      "Edit(.env.*)",
+      "Edit(**/.env)",
+      "Edit(**/.env.*)",
+      "Edit(**/*.pem)",
+      "Edit(**/*credentials*)",
+      "Edit(**/secrets/**)",
+      "Write(.env)",
+      "Write(.env.*)",
+      "Write(**/.env)",
+      "Write(**/.env.*)",
+      "Write(**/*.pem)",
+      "Write(**/*credentials*)",
+      "Write(**/secrets/**)"
+    ],
+    "hooks": {
+      "PreToolUse": [
+        {
+          "matcher": "",
+          "hooks": [
+            {
+              "type": "command",
+              "command": "python .claude/hooks/block-env-files.py"
+            }
+          ]
+        }
+      ]
+    }
   }
 }

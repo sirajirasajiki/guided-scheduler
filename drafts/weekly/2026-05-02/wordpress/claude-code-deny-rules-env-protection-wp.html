@@ -1,0 +1,315 @@
+<p>こんにちは、白々さじきです。</p>
+
+<p>Claude Code への完全委任開発を検証しているシリーズの途中で、ふと気になったことがありました。「そういえば、Claude Code って .env ファイルも普通に読めるんじゃないか？」という素朴な疑問です。</p>
+
+<p>この記事は、その疑問をきっかけに deny ルールを設定し、GitHub の Issue でバグを見つけて不安になり、hook を追加して、最後に実際にテストしてみたら「思ったより守れていた」という話です。</p>
+
+
+<h2>.env が読まれると何が問題か</h2>
+
+<p>まず Claude Code 自身に「Claude Code に .env を読まれると何が問題ですか？」と聞いてみました。返ってきた答えを整理すると、5つのリスクに分類できました。</p>
+
+<p><strong>1. 機密情報のコンテキスト混入</strong></p>
+
+<p>API キー、DB 接続文字列、トークン等が会話履歴・ログに残ります。Claude のモデル学習には使われないとされていますが、Anthropic 側のサーバーに送信自体は発生します。セッションログ・使用状況の自動送信（テレメトリ）・エラーレポート経由で漏れる可能性もゼロではありません。</p>
+
+<p><strong>2. 生成物への漏洩</strong></p>
+
+<p>Claude が「親切心」で README・サンプルコード・ドキュメントに実値を埋め込むことがあります。コミットメッセージや PR 説明に値が混ざるケース、自動生成ドキュメントに転記されるケースなどが考えられます。<code>localhost</code> URL が本番向け成果物に紛れ込むのと同種の事故パターンです。</p>
+
+<p><strong>3. Git 履歴汚染</strong></p>
+
+<p>Claude が <code>.gitignore</code> を見落として <code>git add -A</code> で <code>.env</code> をステージしてしまうケースがあります。一度 push されると履歴の rewrite が必要になり、シークレットのローテーションも必須になります。</p>
+
+<p><strong>4. プロンプトインジェクション経由の流出</strong></p>
+
+<p>外部 URL フェッチを許可している運用では、悪意あるページの指示で「.env の中身を要約して」等が成立しうるリスクがあります。WebFetch の許可範囲が広いほどリスクは高まります。</p>
+
+<p><strong>5. 監査・コンプライアンス</strong></p>
+
+<p>業務用途では、顧客環境のシークレットを外部 LLM に送ると NDA 抵触の可能性があります。個人検証リポジトリと業務リポジトリで運用を分ける必要があります。本記事は個人検証リポジトリを対象としているため直接は該当しませんが、同じ運用を業務環境に持ち込む際は注意が必要です。</p>
+
+
+<h2>settings.json の deny ルールとは</h2>
+
+<p>Claude Code には <code>~/.claude/settings.json</code>（グローバル）または <code>.claude/settings.json</code>（プロジェクト）に権限設定を書く仕組みがあります。</p>
+
+<p><code>deny</code> ルールを使うと、特定のツール呼び出しを禁止できます。</p>
+
+<pre><code>{
+  "permissions": {
+    "deny": ["Read(.env)", "Write(.env)"]
+  }
+}</code></pre>
+
+<p>評価順序は <strong>deny → ask → allow</strong> の順で、deny が常に優先されます。</p>
+
+
+<h2>実際に設定した deny ルール</h2>
+
+<p>今回、プロジェクトの <code>.claude/settings.local.json</code> に次の deny ルールを追加しました。<code>Read</code> だけでなく <code>Edit</code>・<code>Write</code> も必要と気づいたため、3ツール分すべてを設定しています。</p>
+
+<pre><code>{
+  "permissions": {
+    "deny": [
+      "Read(.env)",  "Read(.env.*)",  "Read(**/.env)",  "Read(**/.env.*)",
+      "Read(**/*.pem)",  "Read(**/*credentials*)",  "Read(**/secrets/**)",
+      "Edit(.env)",  "Edit(.env.*)",  "Edit(**/.env)",  "Edit(**/.env.*)",
+      "Edit(**/*.pem)",  "Edit(**/*credentials*)",  "Edit(**/secrets/**)",
+      "Write(.env)", "Write(.env.*)", "Write(**/.env)", "Write(**/.env.*)",
+      "Write(**/*.pem)", "Write(**/*credentials*)", "Write(**/secrets/**)"
+    ]
+  }
+}</code></pre>
+
+<p>「これで守られた」と思っていましたが、調べると話はそう単純ではありませんでした。</p>
+
+
+<h2>deny ルールにはバグ報告がある（2026年5月時点）</h2>
+
+<p>GitHub の公式リポジトリに複数の Issue が報告されています。</p>
+
+<ul>
+  <li><strong><a href="https://github.com/anthropics/claude-code/issues/8031" target="_blank">Issue #8031</a></strong>（2025年9月報告）：.env の内容が deny 設定をしているにもかかわらず読まれた。自動クローズされたが<strong>修正は行われていない</strong>。</li>
+  <li><strong><a href="https://github.com/anthropics/claude-code/issues/27040" target="_blank">Issue #27040</a></strong>（2026年2月報告）：.claude/settings.json の deny ルールが無視される。<strong>2026年5月時点で OPEN のまま</strong>。</li>
+</ul>
+
+<p>また、deny ルールは Read/Edit/Write ツールをブロックするだけで、<strong><code>Bash(cat .env)</code> のようなシェルコマンド経由のアクセスは別ルール扱い</strong>になるという根本的な穴があります。</p>
+
+<p>そこで次の対策を追加しました。</p>
+
+
+<h2>Bash 経由のバイパスを防ぐ：PreToolUse hook</h2>
+
+<p>Claude Code には、ツール呼び出しの直前にシェルスクリプトを実行できる <strong>PreToolUse hook</strong> という仕組みがあります。GitHub Issue のコメントでも「deny ルールがバグで機能しないので hook で代替実装した」という報告が複数ありました。</p>
+
+<p><code>.claude/hooks/block-env-files.py</code> を作成し、<code>settings.local.json</code> に登録しました。</p>
+
+<pre><code># .claude/hooks/block-env-files.py
+import sys, json, re
+
+SENSITIVE_FILE_PATTERNS = [
+    r"\.env($|\.)", r"\.pem$", r"credentials", r"secrets[/\\]",
+]
+SHELL_ENV_PATTERNS = [
+    r"(cat|grep|head|tail|less|more|type|source)\s+\S*\.env",
+    r"Get-Content\s+\S*\.env",
+    r"\.\s+\S*\.env",
+]
+
+def block(reason):
+    print(json.dumps({"decision": "block", "reason": reason}))
+    sys.exit(0)
+
+try:
+    data = json.load(sys.stdin)
+    tool = data.get("tool_name", "")
+    inp  = data.get("tool_input", {})
+
+    file_path = inp.get("file_path", "")
+    if file_path and any(re.search(p, file_path, re.IGNORECASE) for p in SENSITIVE_FILE_PATTERNS):
+        block(f"Sensitive file access denied: {file_path}")
+
+    if tool == "Bash":
+        cmd = inp.get("command", "")
+        if any(re.search(p, cmd, re.IGNORECASE) for p in SHELL_ENV_PATTERNS):
+            block(f"Shell access to .env file denied: {cmd[:60]}")
+except SystemExit:
+    raise
+except Exception:
+    pass</code></pre>
+
+<p>hook の登録（<code>settings.local.json</code>）：</p>
+
+<pre><code>{
+  "permissions": {
+    "hooks": {
+      "PreToolUse": [
+        {
+          "matcher": "",
+          "hooks": [
+            { "type": "command", "command": "python .claude/hooks/block-env-files.py" }
+          ]
+        }
+      ]
+    }
+  }
+}</code></pre>
+
+
+<h2>実際にテストしてみた</h2>
+
+<p>ダミーの .env ファイルを作成し、各アクセス手段を試しました。</p>
+
+<pre><code># テスト用 .env（ダミー値）
+DUMMY_API_KEY=test-dummy-key-12345
+DUMMY_DB_PASSWORD=test-dummy-password</code></pre>
+
+<p>まずファイルの作成から試みました。</p>
+
+<blockquote><p>じゃあ実際に .env を置いてアクセスできないか確認してみるか。</p></blockquote>
+
+<p>これに対して Claude Code はいくつかの手段でファイル作成を試みましたが、すべてブロックされました。</p>
+
+<pre><code># Write ツールで作成を試みる → ブロック
+File is in a directory that is denied by your permission settings.
+
+# PowerShell Set-Content で作成を試みる → ブロック
+set-content targeting '.../.env' was blocked.</code></pre>
+
+<p>ファイルは手動で作成し、その後アクセステストを実施しました。</p>
+
+<pre><code># Read ツールでの読み取りを試みる → ブロック
+File is in a directory that is denied by your permission settings.
+
+# Bash で cat を試みる → hook がブロック
+Permission to use Bash with command cat ".../.env" has been denied.
+
+# 比較：cat package.json は通過
+{ "name": "guided-scheduler", ... }</code></pre>
+
+<p><code>cat package.json</code> は通過し <code>cat .env</code> はブロックされたことで、deny ルールと hook がそれぞれ正しく .env 限定で動作していることを確認できました。</p>
+
+<p>結果まとめ：</p>
+
+<table>
+  <thead>
+    <tr>
+      <th>操作</th>
+      <th>ツール</th>
+      <th>結果</th>
+      <th>発動した防御</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>Write(.env)</code></td>
+      <td>Write ツール</td>
+      <td>✅ ブロック</td>
+      <td>deny ルール</td>
+    </tr>
+    <tr>
+      <td><code>Set-Content .env</code></td>
+      <td>PowerShell</td>
+      <td>✅ ブロック</td>
+      <td>deny ルール（PS にも有効と判明）</td>
+    </tr>
+    <tr>
+      <td><code>Remove-Item .env</code></td>
+      <td>PowerShell</td>
+      <td>✅ ブロック</td>
+      <td>deny ルール（削除も防いだ）</td>
+    </tr>
+    <tr>
+      <td><code>Read(.env)</code></td>
+      <td>Read ツール</td>
+      <td>✅ ブロック</td>
+      <td>deny ルール</td>
+    </tr>
+    <tr>
+      <td><code>cat .env</code></td>
+      <td>Bash</td>
+      <td>✅ ブロック</td>
+      <td><strong>hook</strong>（<code>cat package.json</code> は通過）</td>
+    </tr>
+  </tbody>
+</table>
+
+<p><strong>deny ルールは Read/Write/Edit ツールだけでなく、PowerShell の書き込み・削除操作にまで有効でした。</strong>バグ報告はあるものの、少なくともこの環境・バージョンでは想定より広い範囲で機能しています。</p>
+
+<p><code>cat .env</code> は deny ルールの対象外（Bash ツール）でしたが、hook が正確にキャッチしました。<code>cat package.json</code> は通過したことで、.env 限定のブロックであることも確認できています。</p>
+
+
+<h2>余談：wrangler.toml の database_id は漏れても大丈夫？</h2>
+
+<p>話の流れで「.toml ファイルも deny した方がいいか？」という疑問が出てきました。</p>
+
+<p>このプロジェクトの <code>wrangler.toml</code> には Cloudflare D1 の <code>database_id</code> が書かれています。調べた結果、<strong>database_id 単体では何もできません</strong>。Cloudflare D1 の REST API にアクセスするには、database_id・account_id・API Token の3つがすべて必要です。API Token は wrangler.toml には含まれておらず、Cloudflare 側で発行・失効できます。</p>
+
+<p>wrangler.toml を deny リストに追加すると Claude が DB 構成やデプロイ設定を把握できなくなり作業の邪魔になるため、<strong>deny しない方が正解</strong>という結論になりました。</p>
+
+
+<h2>guided-scheduler の場合 — そもそも .env がなかった</h2>
+
+<p>調べていて気づいたのですが、このプロジェクト（guided-scheduler）には <code>.env</code> ファイルが存在しませんでした。</p>
+
+<p>Cloudflare Workers では、シークレット情報は <code>wrangler secret put</code> コマンドで Cloudflare 側に登録し、<code>env</code> バインディング経由で参照する設計になっています。</p>
+
+<p>「守ろうとしていたファイルが最初から存在しなかった」という結末でした。ただし deny ルールと hook の仕組みは他のプロジェクトでも再利用できるため、設定しておく価値はあります。</p>
+
+
+<h2>.env が必要な他のプロジェクトではどうすればいい？</h2>
+
+<p>Next.js や Node.js のプロジェクトなど、.env ファイルが必要な場面は多くあります。現実的な対処法をまとめます。</p>
+
+<p><strong>1. deny ルール ＋ hook を設定する（今回の実装）</strong></p>
+
+<p>本記事で紹介した <code>.claude/settings.local.json</code> の deny ルールと <code>.claude/hooks/block-env-files.py</code> を導入します。Read/Write/Edit/Bash の各方向からのアクセスをブロックできます。</p>
+
+<p><strong>2. .env.example だけリポジトリに置き、実際の .env は渡さない</strong></p>
+
+<p>キー名だけを書いた <code>.env.example</code> をリポジトリに置き、実際の値が入った <code>.env</code> は Claude Code のコンテキストに入れない運用です。CLAUDE.md に「.env は読まないこと」と明記するとソフトな抑止になります。</p>
+
+<p><strong>3. シークレット管理ツールで値を注入し .env 自体を作らない</strong></p>
+
+<p>.env ファイル自体を置かず、実行時にシークレット管理ツールから注入する設計です。筆者自身は未実施ですが、以下のようなツールが選択肢になります（詳細は各公式ドキュメントをご参照ください）。</p>
+
+<ul>
+  <li><strong><a href="https://www.doppler.com/" target="_blank">Doppler</a></strong> — SaaS 型のシークレット管理（※筆者未実施）</li>
+  <li><strong><a href="https://developer.1password.com/docs/cli/" target="_blank">1Password CLI</a></strong> — 1Password のシークレットをコマンドから注入（※筆者未実施）</li>
+  <li><strong><a href="https://direnv.net/" target="_blank">direnv</a></strong> — ディレクトリ単位で環境変数を管理するシェル拡張（※筆者未実施）</li>
+</ul>
+
+
+<h2>対策の有効性まとめ</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>対策</th>
+      <th>有効性</th>
+      <th>備考</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>settings.json の deny ルール</td>
+      <td>✅ Read/Write/Edit/PS に有効</td>
+      <td>バグ報告あり・バージョン依存の可能性あり</td>
+    </tr>
+    <tr>
+      <td>PreToolUse hook</td>
+      <td>✅ Bash 経由もブロック</td>
+      <td>deny のバグを補完する二重防衛</td>
+    </tr>
+    <tr>
+      <td>.env.example のみ渡す運用</td>
+      <td>✅ 確実</td>
+      <td>最も手軽</td>
+    </tr>
+    <tr>
+      <td>シークレット管理ツールで注入</td>
+      <td>✅ 確実</td>
+      <td>.env 自体を作らない設計</td>
+    </tr>
+    <tr>
+      <td>CLAUDE.md に「読まないこと」と明記</td>
+      <td>△ ソフトな抑止</td>
+      <td>Claude が従うかは保証なし</td>
+    </tr>
+    <tr>
+      <td>.env ファイル自体を置かない設計</td>
+      <td>✅ 最も確実</td>
+      <td>Cloudflare Secrets 等を活用</td>
+    </tr>
+  </tbody>
+</table>
+
+
+<h2>まとめ</h2>
+
+<p>deny ルールのバグ報告を見て「機能していないのでは」と不安になりましたが、実際にテストしてみると Read/Write/Edit ツールに加えて PowerShell 操作まで広くブロックされていました。一方で Bash 経由（<code>cat .env</code> 等）は抜けられるため、PreToolUse hook で補完しています。</p>
+
+<p>「設定したから安心」ではなく、「設定してテストして初めて安心できる」というのが今回の学びです。</p>
+
+<p><strong>教訓：deny ルールは設定後に必ず動作確認すること。Bash 抜けは hook で補完し、根本対策は「.env ファイル自体を置かない設計」と組み合わせるのが最善。</strong></p>

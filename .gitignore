@@ -25,6 +25,7 @@ dist-ssr
 
 .wrangler
 wrangler.toml
+.env
 
 # Wrangler local dev secrets (equivalent of .env)
 .dev.vars
