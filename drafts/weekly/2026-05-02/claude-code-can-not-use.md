@@ -1,5 +1,5 @@
 ---
-title: "VS Code の Claude Code 拡張が Activating のまま開かなくなった話【バージョン不一致が原因だった】"
+title: "VS Code の Claude Code 拡張が Activating のまま止まった話【拡張のリリースバグが原因だった】"
 slug: "claude-code-can-not-use"
 status: "draft"
 source_dates:
@@ -8,22 +8,24 @@ tags:
   - "Claude Code"
   - "VS Code"
   - "トラブルシューティング"
-seo_title: "VS Code の Claude Code 拡張が Activating で止まる問題の解決方法【バージョン不一致】"
-keywords: "Claude Code, VS Code, Activating, 拡張機能, バージョン不一致, ロールバック, Install Specific Version, Developer Tools, トラブルシューティング, claude-vscode, 2.1.129, アンインストール, バージョンアップ"
+seo_title: "VS Code の Claude Code 拡張が Activating で止まる問題の解決方法【リリースバグ】"
+keywords: "Claude Code, VS Code, Activating, 拡張機能, リリースバグ, ロールバック, Install Specific Version, Developer Tools, トラブルシューティング, claude-vscode, 2.1.129, アンインストール, バージョンアップ"
 meta:
   description_candidates:
-    - "VS Code の Claude Code 拡張が Activating のまま止まった。CLI をバージョンアップしても直らず、Developer Tools で拡張バグを特定。アンインストール→再インストールでも再発し、Install Specific Version で解決した手順を解説。"
-    - "Claude Code 拡張が Activating で止まる場合、CLI 更新でも再インストールでも直らないことがある。Developer Tools でバグを特定し、Install Specific Version でロールバックする手順をまとめた。"
-    - "Claude CLI をバージョンアップしても VS Code 拡張の Activating が解消しない場合の診断と解決フロー。Install Specific Version で特定バージョンを指定するのがポイント。"
+    - "VS Code の Claude Code 拡張が Activating のまま止まった原因は拡張 2.1.129 のリリースバグ。CLI 更新でも再インストールでも直らず、Install Specific Version で古いバージョンを指定して解決した手順を解説。"
+    - "Claude Code 拡張が Activating で止まる場合、CLI 更新でも再インストールでも直らないことがある。Developer Tools でリリースバグを特定し、Install Specific Version でロールバックする手順をまとめた。"
+    - "Claude CLI をバージョンアップしても VS Code 拡張の Activating が解消しない場合の診断と解決フロー。原因は拡張のリリースバグで、Install Specific Version で特定バージョンを指定するのがポイント。"
 ---
 
-# VS Code の Claude Code 拡張が Activating のまま開かなくなった話【バージョン不一致が原因だった】
+# VS Code の Claude Code 拡張が Activating のまま止まった話【拡張のリリースバグが原因だった】
 
 こんにちは、白々さじきです。
 
 昨日まで普通に使えていた VS Code の Claude Code 拡張が、ある日突然 `Activating...` のまま動かなくなりました。
 
 「CLI のバージョンが古いのかも」と思ってバージョンアップしてみたのですが、それでも直らず。その後アンインストール・再インストールも試しましたがやはり再発し、原因特定に手間取りました。同じ症状で詰まっている人向けに、実際にたどった手順をそのまま書き残します。
+
+> **追記（2026-05-07）：** v2.1.131 で本バグは修正済みです。拡張を最新版に更新すれば解消します。この記事は修正前のバージョンを使っていた時点の記録として残しています。
 
 ---
 
