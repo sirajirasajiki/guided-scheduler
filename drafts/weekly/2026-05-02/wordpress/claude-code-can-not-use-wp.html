@@ -1,0 +1,123 @@
+<p>こんにちは、白々さじきです。</p>
+
+<p>昨日まで普通に使えていた VS Code の Claude Code 拡張が、ある日突然 <code>Activating...</code> のまま動かなくなりました。</p>
+
+<p>「CLI のバージョンが古いのかも」と思ってバージョンアップしてみたのですが、それでも直らず。その後アンインストール・再インストールも試しましたがやはり再発し、原因特定に手間取りました。同じ症状で詰まっている人向けに、実際にたどった手順をそのまま書き残します。</p>
+
+
+<h2>症状</h2>
+
+<!-- スクショ: VS Code のサイドバーまたはステータスバーに Activating... と表示されている状態 -->
+
+<ul>
+  <li>VS Code の Claude Code 拡張が <code>Activating...</code> のまま止まっている</li>
+  <li><code>command 'claude-vscode.editor.openLast' not found</code> というエラーが出る</li>
+  <li>Claude Code CLI 自体はターミナルで動いている</li>
+</ul>
+
+
+<h2>まず CLI をバージョンアップした（でも直らなかった）</h2>
+
+<p>拡張と CLI のバージョンがずれていると動かないことがあると聞いたことがあったので、まず CLI を更新してみた。</p>
+
+<p>VS Code 内ターミナル（<code>Ctrl+@</code>）で実行。</p>
+
+<pre><code>claude --version</code></pre>
+
+<p>バージョンが古かったので更新した。</p>
+
+<pre><code>npm update -g @anthropic-ai/claude-code</code></pre>
+
+<p>VS Code を再起動したが、<strong><code>Activating...</code> は解消されなかった。</strong></p>
+
+
+<h2>次に Developer Tools でエラーを確認した</h2>
+
+<p><code>Ctrl+Shift+P</code> → <code>Developer: Toggle Developer Tools</code> → Console タブを開く。</p>
+
+<p>Filter ボックスに <code>claude</code> と入力して絞り込む。</p>
+
+<!-- スクショ: Developer Tools の Console タブ。claude フィルタをかけた状態でエラーが表示されている -->
+
+<p>以下のエラーが出ていた。</p>
+
+<pre><code>Activating extension 'Anthropic.claude-code' failed:
+The argument 'filename' must be a file URL object, file URL string, or absolute path string.
+Received 'file:///home/runner/work/claude-cli-internal/claude-cli-internal/build-agent-sdk/sdk.mjs'.</code></pre>
+
+<p><code>/home/runner/work/...</code> というパスは GitHub Actions のビルド環境のパスで、Windows 環境には存在しない。拡張のビルド時にパスがハードコードされたまま配布されてしまったと考えられる。</p>
+
+<p>つまり原因は<strong>拡張の 2.1.129 にリリースバグが含まれていた</strong>こと。CLI 側は無関係。</p>
+
+
+<h2>アンインストール → 再インストール（でも直らなかった）</h2>
+
+<p>「壊れているなら入れ直せばいいか」と思い、いったんアンインストールした。</p>
+
+<!-- スクショ: Extensions パネルで Claude Code を選択し、アンインストールボタンが表示されている状態 -->
+
+<p>Extensions（<code>Ctrl+Shift+X</code>）→ Claude Code → <code>Uninstall</code> を選択。VS Code を再起動後、マーケットプレイスから再インストール。</p>
+
+<!-- スクショ: マーケットプレイスから Claude Code をインストールしている状態（または再起動後に Install ボタンを押している状態） -->
+
+<p>結果：<strong>同じ症状が再発した。</strong></p>
+
+<p>当然といえば当然で、再インストールしても最新版（2.1.129）が入るため、同じバグを踏む。</p>
+
+
+<h2>特定バージョンを指定してインストールする</h2>
+
+<p>再インストール後、今度は別のバージョンを指定してインストールした。</p>
+
+<p>Extensions（<code>Ctrl+Shift+X</code>）→ Claude Code → 歯車アイコン → <code>Install Specific Version...</code></p>
+
+<!-- スクショ: 歯車アイコンを押したメニューに Install Specific Version... が表示されている状態 -->
+
+<p>一覧から <code>2.1.128</code>（またはそれ以前）を選択してインストール。</p>
+
+<!-- スクショ: バージョン一覧から 2.1.128 を選択している状態 -->
+
+<p>VS Code を再起動したところ、<code>Activating...</code> が解消されて正常に起動した。</p>
+
+<!-- スクショ: Claude Code 拡張が正常に起動し、アイコンやパネルが使える状態 -->
+
+
+<h2>補足：CLI と拡張のバージョンは完全一致しなくても動く</h2>
+
+<p>解決後の状態：</p>
+
+<ul>
+  <li>拡張：2.1.128</li>
+  <li>CLI：2.1.129</li>
+</ul>
+
+<p>この組み合わせで正常に動作している。CLI と拡張は完全に同じバージョンである必要はない。2.1.129 の拡張にバグがあっただけなので、Anthropic が修正版をリリースしたら拡張だけ更新すれば揃う。</p>
+
+
+<h2>診断フロー</h2>
+
+<pre><code>Activating... のまま止まる
+    ↓
+CLI を npm update でバージョンアップ → 直らない
+    ↓
+Developer Tools → Console → claude でフィルタ
+    ↓
+"filename must be a file URL..." のエラーを確認
+    ↓
+拡張をアンインストール → 再インストール → 同じ症状が出る
+（最新版に同じバグが入っているため）
+    ↓
+Install Specific Version... でひとつ前のバージョンを指定
+    ↓
+VS Code を再起動 → 解消</code></pre>
+
+
+<h2>まとめ</h2>
+
+<ul>
+  <li>CLI のバージョンアップで直らない場合、拡張側のバグの可能性がある</li>
+  <li><code>Activating...</code> で止まる場合、Output ログに Claude Code のチャンネル自体が存在しないことがある（＝起動処理が始まっていない）</li>
+  <li>Developer Tools の Console で <code>claude</code> フィルタをかけると原因が特定しやすい</li>
+  <li>拡張の自動更新でバグが入ることがある。再インストールでは直らず、<code>Install Specific Version...</code> で古いバージョンを指定する必要がある</li>
+  <li>CLI と拡張のバージョンは完全一致しなくても動く</li>
+</ul>
