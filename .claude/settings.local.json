@@ -39,7 +39,14 @@
       "Bash(python3 -c \"import datetime; d=datetime.date\\(2026,5,2\\); print\\(d.strftime\\('%A'\\)\\); d2=datetime.date\\(2026,5,5\\); print\\(d2.strftime\\('%A'\\)\\)\")",
       "Bash(Get-ChildItem -Path \"c:\\\\Users\\\\takag\\\\Project\\\\guided-scheduler\" -Directory)",
       "PowerShell(ls \"c:\\\\Users\\\\takag\\\\Project\\\\guided-scheduler\" | Where-Object { $_.PSIsContainer })",
-      "Bash(claude --version)"
+      "Bash(claude --version)",
+      "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\takag\\\\Project\\\\guided-scheduler\" -Recurse -Directory)",
+      "Bash(Sort-Object)",
+      "Bash(mkdir -p \"c:/Users/takag/Project/guided-scheduler/docs/plans/issue16-plan\" && echo \"created\")",
+      "WebFetch(domain:tanstack.com)",
+      "WebFetch(domain:www.npmjs.com)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Bash(gh api *)"
     ],
     "deny": [
       "Read(.env)",
@@ -63,6 +70,9 @@
       "Write(**/*.pem)",
       "Write(**/*credentials*)",
       "Write(**/secrets/**)"
+    ],
+    "additionalDirectories": [
+      "c:\\Users\\takag\\Project\\guided-scheduler\\docs\\plans"
     ],
     "hooks": {
       "PreToolUse": [
